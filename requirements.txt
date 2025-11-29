@@ -1,0 +1,4 @@
+# SENTINEL Security Dashboard - Dependencies
+flask>=3.0.0
+opencv-python>=4.8.0
+picamera2>=0.3.0
