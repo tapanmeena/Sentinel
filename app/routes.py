@@ -354,7 +354,8 @@ def motion_settings():
         return jsonify({
             "sensitivity": status.get('sensitivity'),
             "cooldown": status.get('cooldown'),
-            "buffer_seconds": status.get('buffer_seconds')
+            "buffer_seconds": status.get('buffer_seconds'),
+            "highlight_motion": status.get('highlight_motion', True)
         })
     
     # POST - update settings
@@ -362,7 +363,8 @@ def motion_settings():
     result = Camera.set_motion_settings(
         sensitivity=data.get('sensitivity'),
         cooldown=data.get('cooldown'),
-        buffer_seconds=data.get('buffer_seconds')
+        buffer_seconds=data.get('buffer_seconds'),
+        highlight_motion=data.get('highlight_motion')
     )
     return jsonify(result)
 
@@ -380,7 +382,8 @@ def motion_settings_camera(camera_id):
         return jsonify({
             "sensitivity": status.get('sensitivity'),
             "cooldown": status.get('cooldown'),
-            "buffer_seconds": status.get('buffer_seconds')
+            "buffer_seconds": status.get('buffer_seconds'),
+            "highlight_motion": status.get('highlight_motion', True)
         })
     
     # POST - update settings
@@ -388,7 +391,8 @@ def motion_settings_camera(camera_id):
     result = camera.set_motion_settings(
         sensitivity=data.get('sensitivity'),
         cooldown=data.get('cooldown'),
-        buffer_seconds=data.get('buffer_seconds')
+        buffer_seconds=data.get('buffer_seconds'),
+        highlight_motion=data.get('highlight_motion')
     )
     CameraManager.save_motion_configs()
     return jsonify(result)

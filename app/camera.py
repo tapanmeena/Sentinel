@@ -56,10 +56,12 @@ class BaseCamera(ABC):
         self._motion_sensitivity = 30
         self._motion_cooldown = 10
         self._motion_buffer_seconds = 5
+        self._motion_highlight_enabled = True  # Show bounding boxes on motion
         self._motion_detected = False
         self._last_motion_time: float = 0
         self._previous_frame: Optional[Any] = None
         self._frame_buffer: Optional[deque] = None
+        self._motion_boxes: List[Tuple[int, int, int, int]] = []  # Current motion bounding boxes
         
         # Directories (will be set by CameraManager)
         self._recordings_dir = "recordings"
@@ -106,13 +108,14 @@ class BaseCamera(ABC):
         
         # Motion detection
         if self._motion_enabled:
-            motion_now = self._detect_motion(bgr_frame)
-            if motion_now:
+            motion_boxes = self._detect_motion(bgr_frame)
+            self._motion_boxes = motion_boxes  # Store for potential use
+            if motion_boxes:
                 self._last_motion_time = current_time
                 self._motion_detected = True
             self._handle_motion_recording(current_time)
         
-        # Write frame to video if recording
+        # Write frame to video if recording (use clean frame without overlays)
         with self._lock:
             if self._is_recording and self._video_writer is not None:
                 try:
@@ -121,7 +124,13 @@ class BaseCamera(ABC):
                 except Exception as e:
                     print(f"[{self.camera_id}] Error writing frame: {e}")
         
-        ret, jpeg = cv2.imencode('.jpg', bgr_frame)
+        # Create frame for streaming (may have motion overlays)
+        stream_frame = bgr_frame
+        if self._motion_enabled and self._motion_highlight_enabled and self._motion_boxes:
+            stream_frame = bgr_frame.copy()  # Don't modify original
+            self._draw_motion_boxes(stream_frame, self._motion_boxes)
+        
+        ret, jpeg = cv2.imencode('.jpg', stream_frame)
         if ret:
             self._last_frame = jpeg.tobytes()
             self._last_frame_time = current_time
@@ -138,14 +147,19 @@ class BaseCamera(ABC):
             else:
                 time.sleep(0.1)  # Prevent tight loop if no frame
     
-    def _detect_motion(self, frame) -> bool:
-        """Detect motion by comparing with previous frame."""
+    def _detect_motion(self, frame) -> List[Tuple[int, int, int, int]]:
+        """Detect motion by comparing with previous frame.
+        
+        Returns:
+            List of bounding boxes (x, y, w, h) for detected motion regions.
+            Empty list if no motion detected.
+        """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
         
         if self._previous_frame is None:
             self._previous_frame = gray
-            return False
+            return []
         
         frame_delta = cv2.absdiff(self._previous_frame, gray)
         threshold_value = self._motion_sensitivity
@@ -156,10 +170,26 @@ class BaseCamera(ABC):
         self._previous_frame = gray
         
         min_area = 500
+        motion_boxes = []
         for contour in contours:
             if cv2.contourArea(contour) > min_area:
-                return True
-        return False
+                motion_boxes.append(cv2.boundingRect(contour))
+        
+        return motion_boxes
+    
+    def _draw_motion_boxes(self, frame, boxes: List[Tuple[int, int, int, int]]):
+        """Draw motion detection bounding boxes on the frame.
+        
+        Args:
+            frame: BGR numpy array to draw on (modified in-place)
+            boxes: List of (x, y, w, h) bounding boxes
+        """
+        for (x, y, w, h) in boxes:
+            # Draw green rectangle with thickness 2
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # Optional: Add "MOTION" label
+            cv2.putText(frame, "MOTION", (x, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     
     def _handle_motion_recording(self, current_time: float) -> None:
         """Handle automatic recording based on motion detection."""
@@ -379,6 +409,7 @@ class BaseCamera(ABC):
         self._motion_sensitivity = config.get('sensitivity', 30)
         self._motion_cooldown = config.get('cooldown', 10)
         self._motion_buffer_seconds = config.get('buffer_seconds', 5)
+        self._motion_highlight_enabled = config.get('highlight_motion', True)
         
         buffer_size = int(self._motion_buffer_seconds * self.framerate)
         self._frame_buffer = deque(maxlen=buffer_size)
@@ -393,6 +424,7 @@ class BaseCamera(ABC):
             "sensitivity": self._motion_sensitivity,
             "cooldown": self._motion_cooldown,
             "buffer_seconds": self._motion_buffer_seconds,
+            "highlight_motion": self._motion_highlight_enabled,
             "time_since_motion": time.time() - self._last_motion_time if self._last_motion_time > 0 else None
         }
     
@@ -414,7 +446,7 @@ class BaseCamera(ABC):
         
         return {"success": True, "message": "Motion detection disabled", "camera_id": self.camera_id}
     
-    def set_motion_settings(self, sensitivity: int = None, cooldown: int = None, buffer_seconds: int = None) -> dict:
+    def set_motion_settings(self, sensitivity: int = None, cooldown: int = None, buffer_seconds: int = None, highlight_motion: bool = None) -> dict:
         """Update motion detection settings."""
         if sensitivity is not None:
             self._motion_sensitivity = max(1, min(100, int(sensitivity)))
@@ -428,6 +460,9 @@ class BaseCamera(ABC):
             old_buffer = list(self._frame_buffer) if self._frame_buffer else []
             self._frame_buffer = deque(old_buffer[-buffer_size:], maxlen=buffer_size)
         
+        if highlight_motion is not None:
+            self._motion_highlight_enabled = bool(highlight_motion)
+        
         return {
             "success": True,
             "message": "Motion settings updated",
@@ -435,7 +470,8 @@ class BaseCamera(ABC):
             "settings": {
                 "sensitivity": self._motion_sensitivity,
                 "cooldown": self._motion_cooldown,
-                "buffer_seconds": self._motion_buffer_seconds
+                "buffer_seconds": self._motion_buffer_seconds,
+                "highlight_motion": self._motion_highlight_enabled
             }
         }
 
@@ -789,7 +825,8 @@ class CameraManager:
                     'enabled': camera._motion_enabled,
                     'sensitivity': camera._motion_sensitivity,
                     'cooldown': camera._motion_cooldown,
-                    'buffer_seconds': camera._motion_buffer_seconds
+                    'buffer_seconds': camera._motion_buffer_seconds,
+                    'highlight_motion': camera._motion_highlight_enabled
                 }
             
             with open(cls._config_file, 'w') as f:
@@ -984,9 +1021,9 @@ class Camera:
         return result
     
     @classmethod
-    def set_motion_settings(cls, sensitivity=None, cooldown=None, buffer_seconds=None):
+    def set_motion_settings(cls, sensitivity=None, cooldown=None, buffer_seconds=None, highlight_motion=None):
         camera = CameraManager.get_default()
-        result = camera.set_motion_settings(sensitivity, cooldown, buffer_seconds) if camera else {"success": False}
+        result = camera.set_motion_settings(sensitivity, cooldown, buffer_seconds, highlight_motion) if camera else {"success": False}
         CameraManager.save_motion_configs()
         return result
     

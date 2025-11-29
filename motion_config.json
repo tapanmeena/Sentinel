@@ -1,10 +1,11 @@
 {
   "cameras": {
     "cam1": {
-      "enabled": false,
+      "enabled": true,
       "sensitivity": 30,
       "cooldown": 10,
-      "buffer_seconds": 5
+      "buffer_seconds": 5,
+      "highlight_motion": true
     }
   }
 }

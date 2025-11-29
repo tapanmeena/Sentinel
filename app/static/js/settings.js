@@ -8,7 +8,8 @@ const state = {
     motionSettings: {
         sensitivity: 30,
         cooldown: 10,
-        buffer_seconds: 5
+        buffer_seconds: 5,
+        highlight_motion: true
     },
     // Theme state
     theme: localStorage.getItem('sentinel-theme') || 'dark',
@@ -45,7 +46,8 @@ async function loadMotionStatus() {
         state.motionSettings = {
             sensitivity: data.sensitivity,
             cooldown: data.cooldown,
-            buffer_seconds: data.buffer_seconds
+            buffer_seconds: data.buffer_seconds,
+            highlight_motion: data.highlight_motion !== undefined ? data.highlight_motion : true
         };
         
         updateMotionUI();
@@ -86,6 +88,12 @@ function updateMotionUI() {
 }
 
 function updateMotionSettingsUI() {
+    // Highlight toggle
+    const highlightToggle = document.getElementById('highlight-toggle');
+    if (highlightToggle) {
+        highlightToggle.checked = state.motionSettings.highlight_motion;
+    }
+    
     // Sensitivity
     const sensitivitySlider = document.getElementById('sensitivity-slider');
     const sensitivityValue = document.getElementById('sensitivity-value');
@@ -310,6 +318,14 @@ function initializeEventListeners() {
     if (motionToggle) {
         motionToggle.addEventListener('change', (e) => {
             toggleMotion(e.target.checked);
+        });
+    }
+    
+    // Highlight motion toggle
+    const highlightToggle = document.getElementById('highlight-toggle');
+    if (highlightToggle) {
+        highlightToggle.addEventListener('change', (e) => {
+            updateMotionSetting('highlight_motion', e.target.checked);
         });
     }
     
