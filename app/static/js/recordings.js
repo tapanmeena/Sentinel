@@ -5,6 +5,10 @@
 // ========== State ==========
 let currentView = 'grid';
 let recordingsData = [];
+let currentCameraFilter = 'all';
+const cameras = window.CAMERAS || {};
+let theme = localStorage.getItem('sentinel-theme') || 'dark';
+let mobileNavOpen = false;
 
 // ========== Time & Date Display ==========
 function updateDateTime() {
@@ -79,6 +83,65 @@ function dismissNotification(notification) {
     setTimeout(() => notification.remove(), 300);
 }
 
+// ========== Theme Toggle ==========
+function initTheme() {
+    document.documentElement.setAttribute('data-theme', theme);
+}
+
+function toggleTheme() {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('sentinel-theme', theme);
+}
+
+// ========== Mobile Navigation ==========
+function openMobileNav() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('active');
+    mobileNavOpen = true;
+    document.body.style.overflow = 'hidden';
+}
+
+function closeMobileNav() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+    mobileNavOpen = false;
+    document.body.style.overflow = '';
+}
+
+function initMobileNav() {
+    const hamburgerBtn = document.querySelector('.hamburger-btn');
+    const closeBtn = document.querySelector('.sidebar-close');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (hamburgerBtn) {
+        hamburgerBtn.addEventListener('click', openMobileNav);
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeMobileNav);
+    }
+    
+    if (overlay) {
+        overlay.addEventListener('click', closeMobileNav);
+    }
+    
+    // Close on nav item click (mobile)
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (mobileNavOpen) {
+                closeMobileNav();
+            }
+        });
+    });
+}
+
 // ========== Recordings Functions ==========
 function showRecordingsList() {
     document.getElementById('recordings-section').style.display = 'block';
@@ -113,7 +176,13 @@ async function loadRecordings() {
     gridEl.innerHTML = '';
     
     try {
-        const response = await fetch('/api/recordings');
+        // Build URL with camera filter
+        let url = '/api/recordings';
+        if (currentCameraFilter && currentCameraFilter !== 'all') {
+            url += `?camera_id=${encodeURIComponent(currentCameraFilter)}`;
+        }
+        
+        const response = await fetch(url);
         const data = await response.json();
         
         loadingEl.style.display = 'none';
@@ -123,7 +192,10 @@ async function loadRecordings() {
             countEl.textContent = data.recordings.length;
         }
         if (totalEl) {
-            totalEl.textContent = `${data.recordings.length} video${data.recordings.length !== 1 ? 's' : ''}`;
+            const cameraName = currentCameraFilter === 'all' 
+                ? '' 
+                : ` (${cameras[currentCameraFilter]?.name || currentCameraFilter})`;
+            totalEl.textContent = `${data.recordings.length} video${data.recordings.length !== 1 ? 's' : ''}${cameraName}`;
         }
         
         if (data.recordings.length === 0) {
@@ -222,9 +294,20 @@ function createRecordingCard(recording) {
     const card = document.createElement('div');
     card.className = 'recording-card';
     
+    // Get camera name
+    const cameraName = recording.camera_id 
+        ? (cameras[recording.camera_id]?.name || recording.camera_id)
+        : 'Unknown';
+    
     // Use thumbnail if available, otherwise show film icon
-    const thumbnailContent = recording.thumbnail 
-        ? `<img src="/thumbnails/${recording.thumbnail}" alt="${recording.filename}" class="thumbnail-image">`
+    const thumbnailPath = recording.thumbnail 
+        ? (recording.camera_id 
+            ? `/thumbnails/${recording.camera_id}/${recording.thumbnail}`
+            : `/thumbnails/${recording.thumbnail}`)
+        : null;
+    
+    const thumbnailContent = thumbnailPath
+        ? `<img src="${thumbnailPath}" alt="${recording.filename}" class="thumbnail-image">`
         : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
                 <line x1="7" y1="2" x2="7" y2="22"/>
@@ -236,8 +319,13 @@ function createRecordingCard(recording) {
                 <line x1="17" y1="7" x2="22" y2="7"/>
             </svg>`;
     
+    // Build path for playback
+    const playPath = recording.camera_id 
+        ? `${recording.camera_id}/${recording.filename}`
+        : recording.filename;
+    
     card.innerHTML = `
-        <div class="recording-thumbnail" onclick="playRecording('${recording.filename}')">
+        <div class="recording-thumbnail" onclick="playRecording('${playPath}')">
             ${thumbnailContent}
             <div class="recording-play-overlay">
                 <div class="play-btn-large">
@@ -246,6 +334,7 @@ function createRecordingCard(recording) {
                     </svg>
                 </div>
             </div>
+            ${recording.camera_id ? `<div class="recording-camera-badge">${cameraName}</div>` : ''}
         </div>
         <div class="recording-info">
             <div class="recording-name">${recording.filename}</div>
@@ -255,13 +344,13 @@ function createRecordingCard(recording) {
             </div>
         </div>
         <div class="recording-actions">
-            <button class="recording-action-btn" onclick="event.stopPropagation(); playRecording('${recording.filename}')">
+            <button class="recording-action-btn" onclick="event.stopPropagation(); playRecording('${playPath}')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
                 Play
             </button>
-            <button class="recording-action-btn" onclick="event.stopPropagation(); downloadRecording('${recording.filename}')">
+            <button class="recording-action-btn" onclick="event.stopPropagation(); downloadRecording('${playPath}')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -269,7 +358,7 @@ function createRecordingCard(recording) {
                 </svg>
                 Download
             </button>
-            <button class="recording-action-btn delete" onclick="event.stopPropagation(); deleteRecording('${recording.filename}')">
+            <button class="recording-action-btn delete" onclick="event.stopPropagation(); deleteRecording('${playPath}')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3 6 5 6 21 6"/>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -284,8 +373,20 @@ function createRecordingCard(recording) {
 function createRecordingRow(recording) {
     const row = document.createElement('tr');
     
-    const thumbnailContent = recording.thumbnail 
-        ? `<img src="/thumbnails/${recording.thumbnail}" alt="${recording.filename}">`
+    // Get camera name
+    const cameraName = recording.camera_id 
+        ? (cameras[recording.camera_id]?.name || recording.camera_id)
+        : 'Unknown';
+    
+    // Use thumbnail if available
+    const thumbnailPath = recording.thumbnail 
+        ? (recording.camera_id 
+            ? `/thumbnails/${recording.camera_id}/${recording.thumbnail}`
+            : `/thumbnails/${recording.thumbnail}`)
+        : null;
+    
+    const thumbnailContent = thumbnailPath
+        ? `<img src="${thumbnailPath}" alt="${recording.filename}">`
         : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
                 <line x1="7" y1="2" x2="7" y2="22"/>
@@ -293,30 +394,36 @@ function createRecordingRow(recording) {
                 <line x1="2" y1="12" x2="22" y2="12"/>
             </svg>`;
     
+    // Build path for playback
+    const playPath = recording.camera_id 
+        ? `${recording.camera_id}/${recording.filename}`
+        : recording.filename;
+    
     row.innerHTML = `
         <td>
             <div class="table-thumbnail">
                 ${thumbnailContent}
             </div>
         </td>
+        <td class="table-camera">${cameraName}</td>
         <td class="table-filename">${recording.filename}</td>
         <td class="table-date">${formatDate(recording.created)}</td>
         <td class="table-size">${formatFileSize(recording.size)}</td>
         <td>
             <div class="table-actions">
-                <button class="table-action-btn play" onclick="playRecording('${recording.filename}')" title="Play">
+                <button class="table-action-btn play" onclick="playRecording('${playPath}')" title="Play">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
                 </button>
-                <button class="table-action-btn" onclick="downloadRecording('${recording.filename}')" title="Download">
+                <button class="table-action-btn" onclick="downloadRecording('${playPath}')" title="Download">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                 </button>
-                <button class="table-action-btn delete" onclick="deleteRecording('${recording.filename}')" title="Delete">
+                <button class="table-action-btn delete" onclick="deleteRecording('${playPath}')" title="Delete">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -396,13 +503,34 @@ function initializeEventListeners() {
     if (tableViewBtn) {
         tableViewBtn.addEventListener('click', () => setView('table'));
     }
+    
+    // Theme toggle button
+    const themeToggle = document.querySelector('.theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+    
+    // Camera filter
+    const cameraFilter = document.getElementById('camera-filter');
+    if (cameraFilter) {
+        cameraFilter.addEventListener('change', (e) => {
+            currentCameraFilter = e.target.value;
+            loadRecordings();
+        });
+    }
 }
 
 // ========== Initialize ==========
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme first
+    initTheme();
+    
     // Start time updates
     updateDateTime();
     setInterval(updateDateTime, 1000);
+    
+    // Initialize mobile navigation
+    initMobileNav();
     
     // Load recordings
     loadRecordings();

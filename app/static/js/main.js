@@ -16,7 +16,16 @@ const state = {
         buffer_seconds: 5
     },
     // Info panel state
-    infoVisible: false
+    infoVisible: false,
+    // Multi-camera state
+    cameras: window.CAMERAS || {},
+    currentCameraId: null,
+    cameraStatuses: {},
+    gridViewActive: false,
+    // Theme state
+    theme: localStorage.getItem('sentinel-theme') || 'dark',
+    // Mobile nav state
+    mobileNavOpen: false
 };
 
 // ========== Time & Date Display ==========
@@ -270,6 +279,12 @@ function initializeEventListeners() {
     if (infoBtn) {
         infoBtn.addEventListener('click', toggleInfoPanel);
     }
+    
+    // Theme toggle button
+    const themeToggle = document.querySelector('.theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
 }
 
 // ========== Info Panel Toggle ==========
@@ -290,11 +305,328 @@ function toggleInfoPanel() {
     }
 }
 
+// ========== Theme Toggle ==========
+function initTheme() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+}
+
+function toggleTheme() {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', state.theme);
+    localStorage.setItem('sentinel-theme', state.theme);
+}
+
+// ========== Mobile Navigation ==========
+function openMobileNav() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (sidebar) sidebar.classList.add('open');
+    if (overlay) overlay.classList.add('active');
+    state.mobileNavOpen = true;
+    document.body.style.overflow = 'hidden';
+}
+
+function closeMobileNav() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+    state.mobileNavOpen = false;
+    document.body.style.overflow = '';
+}
+
+function initMobileNav() {
+    const hamburgerBtn = document.querySelector('.hamburger-btn');
+    const closeBtn = document.querySelector('.sidebar-close');
+    const overlay = document.querySelector('.mobile-nav-overlay');
+    
+    if (hamburgerBtn) {
+        hamburgerBtn.addEventListener('click', openMobileNav);
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeMobileNav);
+    }
+    
+    if (overlay) {
+        overlay.addEventListener('click', closeMobileNav);
+    }
+    
+    // Close on nav item click (mobile)
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (state.mobileNavOpen) {
+                closeMobileNav();
+            }
+        });
+    });
+}
+
+// ========== Multi-Camera Support ==========
+function initCameras() {
+    // Get cameras from window object (injected by template)
+    const cameraIds = Object.keys(state.cameras);
+    if (cameraIds.length === 0) return;
+    
+    // Set initial camera
+    state.currentCameraId = cameraIds[0];
+    
+    // Populate camera selector
+    const cameraSelect = document.getElementById('camera-select');
+    if (cameraSelect) {
+        cameraSelect.innerHTML = cameraIds.map(id => {
+            const cam = state.cameras[id];
+            return `<option value="${id}">${cam.name || id}</option>`;
+        }).join('');
+        
+        cameraSelect.addEventListener('change', (e) => {
+            switchCamera(e.target.value);
+        });
+    }
+    
+    // Update initial camera display
+    updateCameraDisplay();
+    
+    // Start status polling
+    startCameraStatusPolling();
+}
+
+function switchCamera(cameraId) {
+    if (!state.cameras[cameraId]) return;
+    
+    state.currentCameraId = cameraId;
+    updateCameraDisplay();
+    
+    // Update camera select
+    const cameraSelect = document.getElementById('camera-select');
+    if (cameraSelect) {
+        cameraSelect.value = cameraId;
+    }
+}
+
+function updateCameraDisplay() {
+    const cameraId = state.currentCameraId;
+    if (!cameraId) return;
+    
+    const camera = state.cameras[cameraId];
+    
+    // Update video feed
+    const videoFeed = document.getElementById('video-feed');
+    if (videoFeed) {
+        videoFeed.src = `/stream/${cameraId}?t=${Date.now()}`;
+    }
+    
+    // Update camera name badge
+    const cameraNameBadge = document.getElementById('camera-name');
+    if (cameraNameBadge) {
+        cameraNameBadge.textContent = camera.name || cameraId;
+    }
+    
+    // Update status indicator
+    updateCameraStatusUI(cameraId);
+}
+
+function updateCameraStatusUI(cameraId) {
+    const status = state.cameraStatuses[cameraId] || { state: 'unknown' };
+    const indicator = document.querySelector('.camera-status-indicator');
+    const statusDot = indicator?.querySelector('.status-dot');
+    const statusText = indicator?.querySelector('.status-text');
+    
+    if (!indicator) return;
+    
+    // Remove all status classes
+    indicator.classList.remove('reconnecting', 'offline');
+    
+    switch (status.state) {
+        case 'connected':
+            if (statusText) statusText.textContent = 'Connected';
+            break;
+        case 'connecting':
+        case 'reconnecting':
+            indicator.classList.add('reconnecting');
+            if (statusText) statusText.textContent = 'Reconnecting...';
+            break;
+        case 'offline':
+        case 'error':
+            indicator.classList.add('offline');
+            if (statusText) statusText.textContent = 'Offline';
+            break;
+        default:
+            if (statusText) statusText.textContent = status.state || 'Unknown';
+    }
+    
+    // Update connection overlay
+    updateConnectionOverlay(cameraId, status);
+}
+
+function updateConnectionOverlay(cameraId, status) {
+    const overlay = document.querySelector('.connection-status-overlay');
+    if (!overlay) return;
+    
+    if (status.state === 'connected' || status.state === 'connecting') {
+        overlay.classList.remove('visible', 'offline');
+        return;
+    }
+    
+    const title = overlay.querySelector('.status-title');
+    const message = overlay.querySelector('.status-message');
+    const retryInfo = overlay.querySelector('.retry-info');
+    
+    if (status.state === 'reconnecting') {
+        overlay.classList.add('visible');
+        overlay.classList.remove('offline');
+        if (title) title.textContent = 'Reconnecting...';
+        if (message) message.textContent = 'Attempting to restore camera connection';
+        if (retryInfo) {
+            const nextRetry = status.next_retry_in ? Math.ceil(status.next_retry_in) : 0;
+            retryInfo.textContent = `Retry attempt ${status.retry_count || 0} • Next retry in ${nextRetry}s`;
+        }
+    } else if (status.state === 'offline' || status.state === 'error') {
+        overlay.classList.add('visible', 'offline');
+        if (title) title.textContent = 'Camera Offline';
+        if (message) message.textContent = status.error || 'Connection lost';
+        if (retryInfo) retryInfo.textContent = 'Check camera connection and network';
+    }
+}
+
+async function fetchCameraStatuses() {
+    try {
+        const response = await fetch('/api/cameras');
+        const data = await response.json();
+        
+        if (data.cameras) {
+            data.cameras.forEach(cam => {
+                state.cameraStatuses[cam.camera_id] = {
+                    state: cam.state,
+                    retry_count: cam.retry_count,
+                    next_retry_in: cam.next_retry_in,
+                    error: cam.last_error
+                };
+            });
+            
+            // Update current camera status UI
+            if (state.currentCameraId) {
+                updateCameraStatusUI(state.currentCameraId);
+            }
+            
+            // Update grid view statuses if active
+            if (state.gridViewActive) {
+                updateGridCameraStatuses();
+            }
+        }
+    } catch (error) {
+        console.error('Failed to fetch camera statuses:', error);
+    }
+}
+
+let cameraStatusPollInterval = null;
+
+function startCameraStatusPolling() {
+    if (cameraStatusPollInterval) {
+        clearInterval(cameraStatusPollInterval);
+    }
+    
+    // Initial fetch
+    fetchCameraStatuses();
+    
+    // Poll every 3 seconds
+    cameraStatusPollInterval = setInterval(fetchCameraStatuses, 3000);
+}
+
+// ========== Grid View ==========
+function initGridView() {
+    const gridToggle = document.getElementById('grid-toggle');
+    if (!gridToggle) return;
+    
+    gridToggle.addEventListener('click', toggleGridView);
+    
+    // Build grid items
+    buildCameraGrid();
+}
+
+function toggleGridView() {
+    state.gridViewActive = !state.gridViewActive;
+    
+    const videoSection = document.querySelector('.video-section');
+    const cameraGrid = document.querySelector('.camera-grid');
+    const gridToggle = document.getElementById('grid-toggle');
+    
+    if (state.gridViewActive) {
+        if (videoSection) videoSection.style.display = 'none';
+        if (cameraGrid) cameraGrid.classList.add('active');
+        if (gridToggle) gridToggle.classList.add('active');
+        updateGridCameraStatuses();
+    } else {
+        if (videoSection) videoSection.style.display = '';
+        if (cameraGrid) cameraGrid.classList.remove('active');
+        if (gridToggle) gridToggle.classList.remove('active');
+    }
+}
+
+function buildCameraGrid() {
+    const grid = document.querySelector('.camera-grid');
+    if (!grid) return;
+    
+    const cameraIds = Object.keys(state.cameras);
+    
+    grid.innerHTML = cameraIds.map(id => {
+        const cam = state.cameras[id];
+        return `
+            <div class="grid-camera-item" data-camera-id="${id}" onclick="selectGridCamera('${id}')">
+                <img class="video-feed" src="/stream/${id}" alt="${cam.name}">
+                <div class="grid-live-badge">
+                    <span class="live-dot"></span>
+                    LIVE
+                </div>
+                <div class="camera-label">
+                    <span class="status-dot"></span>
+                    <span>${cam.name || id}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectGridCamera(cameraId) {
+    switchCamera(cameraId);
+    toggleGridView(); // Exit grid view
+}
+
+function updateGridCameraStatuses() {
+    document.querySelectorAll('.grid-camera-item').forEach(item => {
+        const cameraId = item.dataset.cameraId;
+        const status = state.cameraStatuses[cameraId];
+        const statusDot = item.querySelector('.camera-label .status-dot');
+        
+        if (statusDot && status) {
+            statusDot.style.background = 
+                status.state === 'connected' ? 'var(--accent-green)' :
+                status.state === 'reconnecting' ? 'var(--accent-amber)' :
+                'var(--accent-red)';
+        }
+    });
+}
+
+// Make selectGridCamera available globally
+window.selectGridCamera = selectGridCamera;
+
 // ========== Initialize ==========
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme first (before content visible)
+    initTheme();
+    
     // Start time updates
     updateDateTime();
     setInterval(updateDateTime, 1000);
+    
+    // Initialize mobile navigation
+    initMobileNav();
+    
+    // Initialize multi-camera support
+    initCameras();
+    initGridView();
     
     // Check initial recording status
     checkRecordingStatus();
