@@ -54,8 +54,8 @@ function updateRecTime() {
     }
 }
 
-function startRecTimer() {
-    state.recSeconds = 0;
+function startRecTimer(initialSeconds = 0) {
+    state.recSeconds = initialSeconds;
     updateRecTimeDisplay();
     state.recInterval = setInterval(updateRecTime, 1000);
 }
@@ -237,8 +237,7 @@ async function checkRecordingStatus() {
         state.isRecording = data.is_recording;
         
         if (data.is_recording && data.duration) {
-            state.recSeconds = Math.floor(data.duration);
-            startRecTimer();
+            startRecTimer(Math.floor(data.duration));
         }
         
         updateRecordingUI(data.is_recording);
