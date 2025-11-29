@@ -2,6 +2,10 @@
  * SENTINEL Security Dashboard - Recordings Page JavaScript
  */
 
+// ========== State ==========
+let currentView = 'grid';
+let recordingsData = [];
+
 // ========== Time & Date Display ==========
 function updateDateTime() {
     const now = new Date();
@@ -96,6 +100,7 @@ async function loadRecordings() {
     const loadingEl = document.getElementById('recordings-loading');
     const emptyEl = document.getElementById('recordings-empty');
     const gridEl = document.getElementById('recordings-grid');
+    const tableEl = document.getElementById('recordings-table');
     const countEl = document.getElementById('recordings-count');
     const totalEl = document.getElementById('recordings-total');
     
@@ -108,6 +113,7 @@ async function loadRecordings() {
         const data = await response.json();
         
         loadingEl.style.display = 'none';
+        recordingsData = data.recordings;
         
         if (countEl) {
             countEl.textContent = data.recordings.length;
@@ -118,19 +124,75 @@ async function loadRecordings() {
         
         if (data.recordings.length === 0) {
             emptyEl.style.display = 'flex';
+            gridEl.style.display = 'none';
+            tableEl.style.display = 'none';
             return;
         }
         
-        data.recordings.forEach(recording => {
-            const card = createRecordingCard(recording);
-            gridEl.appendChild(card);
-        });
+        // Render both views
+        renderGridView(data.recordings);
+        renderTableView(data.recordings);
+        
+        // Show current view
+        updateViewDisplay();
         
     } catch (error) {
         console.error('Failed to load recordings:', error);
         loadingEl.style.display = 'none';
         showNotification('Failed to load recordings', 'error');
     }
+}
+
+function renderGridView(recordings) {
+    const gridEl = document.getElementById('recordings-grid');
+    gridEl.innerHTML = '';
+    recordings.forEach(recording => {
+        const card = createRecordingCard(recording);
+        gridEl.appendChild(card);
+    });
+}
+
+function renderTableView(recordings) {
+    const tableBody = document.getElementById('recordings-table-body');
+    tableBody.innerHTML = '';
+    recordings.forEach(recording => {
+        const row = createRecordingRow(recording);
+        tableBody.appendChild(row);
+    });
+}
+
+function updateViewDisplay() {
+    const gridEl = document.getElementById('recordings-grid');
+    const tableEl = document.getElementById('recordings-table');
+    const emptyEl = document.getElementById('recordings-empty');
+    
+    if (recordingsData.length === 0) {
+        gridEl.style.display = 'none';
+        tableEl.style.display = 'none';
+        emptyEl.style.display = 'flex';
+        return;
+    }
+    
+    emptyEl.style.display = 'none';
+    
+    if (currentView === 'grid') {
+        gridEl.style.display = 'grid';
+        tableEl.style.display = 'none';
+    } else {
+        gridEl.style.display = 'none';
+        tableEl.style.display = 'block';
+    }
+}
+
+function setView(view) {
+    currentView = view;
+    
+    // Update button states
+    document.getElementById('grid-view-btn').classList.toggle('active', view === 'grid');
+    document.getElementById('table-view-btn').classList.toggle('active', view === 'table');
+    
+    // Update display
+    updateViewDisplay();
 }
 
 function formatFileSize(bytes) {
@@ -215,6 +277,53 @@ function createRecordingCard(recording) {
     return card;
 }
 
+function createRecordingRow(recording) {
+    const row = document.createElement('tr');
+    
+    const thumbnailContent = recording.thumbnail 
+        ? `<img src="/thumbnails/${recording.thumbnail}" alt="${recording.filename}">`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                <line x1="7" y1="2" x2="7" y2="22"/>
+                <line x1="17" y1="2" x2="17" y2="22"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+            </svg>`;
+    
+    row.innerHTML = `
+        <td>
+            <div class="table-thumbnail">
+                ${thumbnailContent}
+            </div>
+        </td>
+        <td class="table-filename">${recording.filename}</td>
+        <td class="table-date">${formatDate(recording.created)}</td>
+        <td class="table-size">${formatFileSize(recording.size)}</td>
+        <td>
+            <div class="table-actions">
+                <button class="table-action-btn play" onclick="playRecording('${recording.filename}')" title="Play">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                </button>
+                <button class="table-action-btn" onclick="downloadRecording('${recording.filename}')" title="Download">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
+                <button class="table-action-btn delete" onclick="deleteRecording('${recording.filename}')" title="Delete">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        </td>
+    `;
+    return row;
+}
+
 function playRecording(filename) {
     const videoPlayer = document.getElementById('video-player');
     if (videoPlayer) {
@@ -265,6 +374,17 @@ function initializeEventListeners() {
             loadRecordings();
             showNotification('Recordings refreshed', 'info');
         });
+    }
+    
+    // View toggle buttons
+    const gridViewBtn = document.getElementById('grid-view-btn');
+    const tableViewBtn = document.getElementById('table-view-btn');
+    
+    if (gridViewBtn) {
+        gridViewBtn.addEventListener('click', () => setView('grid'));
+    }
+    if (tableViewBtn) {
+        tableViewBtn.addEventListener('click', () => setView('table'));
     }
 }
 
