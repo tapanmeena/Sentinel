@@ -173,18 +173,32 @@ function showNotification(message, type = 'info') {
     
     notification.innerHTML = `
         ${icons[type] || icons.info}
-        <span>${message}</span>
+        <span class="notification-message">${message}</span>
+        <button class="notification-dismiss" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
     `;
+    
+    // Add dismiss handler
+    const dismissBtn = notification.querySelector('.notification-dismiss');
+    dismissBtn.addEventListener('click', () => dismissNotification(notification));
     
     container.appendChild(notification);
     
     // Auto-remove after 4 seconds
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.classList.add('fade-out');
-            setTimeout(() => notification.remove(), 300);
+            dismissNotification(notification);
         }
     }, 4000);
+}
+
+function dismissNotification(notification) {
+    notification.classList.add('fade-out');
+    setTimeout(() => notification.remove(), 300);
 }
 
 // ========== Fullscreen Toggle ==========

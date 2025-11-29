@@ -94,3 +94,10 @@ def download_snapshot(filename):
     """Download a snapshot file."""
     snapshots_dir = os.path.join(os.getcwd(), 'snapshots')
     return send_from_directory(snapshots_dir, filename, as_attachment=True)
+
+
+@main_bp.route('/thumbnails/<filename>')
+def get_thumbnail(filename):
+    """Serve a recording thumbnail."""
+    thumbnails_dir = os.path.join(os.getcwd(), 'thumbnails')
+    return send_from_directory(thumbnails_dir, filename, as_attachment=False)

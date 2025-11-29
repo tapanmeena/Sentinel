@@ -48,17 +48,31 @@ function showNotification(message, type = 'info') {
     
     notification.innerHTML = `
         ${icons[type] || icons.info}
-        <span>${message}</span>
+        <span class="notification-message">${message}</span>
+        <button class="notification-dismiss" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
     `;
+    
+    // Add dismiss handler
+    const dismissBtn = notification.querySelector('.notification-dismiss');
+    dismissBtn.addEventListener('click', () => dismissNotification(notification));
     
     container.appendChild(notification);
     
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.classList.add('fade-out');
-            setTimeout(() => notification.remove(), 300);
+            dismissNotification(notification);
         }
     }, 4000);
+}
+
+function dismissNotification(notification) {
+    notification.classList.add('fade-out');
+    setTimeout(() => notification.remove(), 300);
 }
 
 // ========== Recordings Functions ==========
@@ -141,9 +155,11 @@ function formatDate(isoString) {
 function createRecordingCard(recording) {
     const card = document.createElement('div');
     card.className = 'recording-card';
-    card.innerHTML = `
-        <div class="recording-thumbnail" onclick="playRecording('${recording.filename}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    
+    // Use thumbnail if available, otherwise show film icon
+    const thumbnailContent = recording.thumbnail 
+        ? `<img src="/thumbnails/${recording.thumbnail}" alt="${recording.filename}" class="thumbnail-image">`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
                 <line x1="7" y1="2" x2="7" y2="22"/>
                 <line x1="17" y1="2" x2="17" y2="22"/>
@@ -152,7 +168,11 @@ function createRecordingCard(recording) {
                 <line x1="2" y1="17" x2="7" y2="17"/>
                 <line x1="17" y1="17" x2="22" y2="17"/>
                 <line x1="17" y1="7" x2="22" y2="7"/>
-            </svg>
+            </svg>`;
+    
+    card.innerHTML = `
+        <div class="recording-thumbnail" onclick="playRecording('${recording.filename}')">
+            ${thumbnailContent}
             <div class="recording-play-overlay">
                 <div class="play-btn-large">
                     <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
