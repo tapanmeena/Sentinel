@@ -7,6 +7,7 @@ import time
 from collections import deque
 from datetime import datetime
 from picamera2 import Picamera2
+from config import Config
 
 
 class Camera:
@@ -23,8 +24,8 @@ class Camera:
     _thumbnails_dir = "thumbnails"
     _current_recording_file = None
     _lock = threading.Lock()
-    _frame_width = 1920
-    _frame_height = 1080
+    _frame_width = Config.CAMERA_RESOLUTION[0]
+    _frame_height = Config.CAMERA_RESOLUTION[1]
     _last_frame = None  # Store last frame for thumbnail
     
     # Motion detection settings
@@ -37,7 +38,7 @@ class Camera:
     _previous_frame = None
     _frame_buffer = None  # Will be initialized as deque
     _motion_config_file = "motion_config.json"
-    _fps = 30.0
+    _fps = float(Config.CAMERA_FRAMERATE)
     
     def __new__(cls):
         if cls._instance is None:
@@ -49,13 +50,13 @@ class Camera:
     def _initialize_camera(cls):
         """Initialize the Picamera2 instance."""
         cls._camera = Picamera2()
-        config = cls._camera.create_video_configuration(main={"size": (1920, 1080)})
+        config = cls._camera.create_video_configuration(main={"size": Config.CAMERA_RESOLUTION})
         cls._camera.configure(config)
         cls._camera.start()
         
-        # Get actual frame dimensions
-        cls._frame_width = 1920
-        cls._frame_height = 1080
+        # Get frame dimensions from config
+        cls._frame_width = Config.CAMERA_RESOLUTION[0]
+        cls._frame_height = Config.CAMERA_RESOLUTION[1]
         
         # Initialize frame buffer for motion detection (5 seconds at 30fps = 150 frames)
         buffer_size = int(cls._motion_buffer_seconds * cls._fps)
@@ -510,4 +511,35 @@ class Camera:
                 "cooldown": cls._motion_cooldown,
                 "buffer_seconds": cls._motion_buffer_seconds
             }
+        }
+    
+    @classmethod
+    def get_camera_info(cls):
+        """Get camera configuration info for display."""
+        width = Config.CAMERA_RESOLUTION[0]
+        height = Config.CAMERA_RESOLUTION[1]
+        fps = Config.CAMERA_FRAMERATE
+        
+        # Determine resolution label
+        if height >= 2160:
+            res_label = "4K"
+        elif height >= 1440:
+            res_label = "1440p"
+        elif height >= 1080:
+            res_label = "1080p"
+        elif height >= 720:
+            res_label = "720p"
+        elif height >= 480:
+            res_label = "480p"
+        else:
+            res_label = f"{height}p"
+        
+        return {
+            "width": width,
+            "height": height,
+            "resolution_label": res_label,
+            "resolution_full": f"{width} × {height} ({res_label})",
+            "fps": fps,
+            "codec": "MP4",
+            "codec_full": "MP4 (H.264 compatible)"
         }

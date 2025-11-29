@@ -11,7 +11,8 @@ main_bp = Blueprint('main', __name__)
 @login_required
 def index():
     """Render the main dashboard page."""
-    return render_template('index.html', username=get_current_user())
+    camera_info = Camera.get_camera_info()
+    return render_template('index.html', username=get_current_user(), camera=camera_info)
 
 
 @main_bp.route('/recordings')
@@ -25,7 +26,8 @@ def recordings_page():
 @login_required
 def settings_page():
     """Render the settings page."""
-    return render_template('settings.html', username=get_current_user())
+    camera_info = Camera.get_camera_info()
+    return render_template('settings.html', username=get_current_user(), camera=camera_info)
 
 
 @main_bp.route('/stream')

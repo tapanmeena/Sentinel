@@ -226,7 +226,7 @@
                                 <label class="setting-label">Resolution</label>
                                 <p class="setting-description">Video capture resolution</p>
                             </div>
-                            <div class="setting-value-static">1280 × 720 (720p)</div>
+                            <div class="setting-value-static">{{ camera.resolution_full }}</div>
                         </div>
 
                         <div class="setting-item">
@@ -234,7 +234,7 @@
                                 <label class="setting-label">Frame Rate</label>
                                 <p class="setting-description">Frames per second</p>
                             </div>
-                            <div class="setting-value-static">20 FPS</div>
+                            <div class="setting-value-static">{{ camera.fps }} FPS</div>
                         </div>
 
                         <div class="setting-item">
@@ -242,7 +242,7 @@
                                 <label class="setting-label">Video Codec</label>
                                 <p class="setting-description">Recording format</p>
                             </div>
-                            <div class="setting-value-static">MP4 (H.264 compatible)</div>
+                            <div class="setting-value-static">{{ camera.codec_full }}</div>
                         </div>
                     </div>
                 </section>

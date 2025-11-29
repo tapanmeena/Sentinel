@@ -14,7 +14,9 @@ const state = {
         sensitivity: 30,
         cooldown: 10,
         buffer_seconds: 5
-    }
+    },
+    // Info panel state
+    infoVisible: false
 };
 
 // ========== Time & Date Display ==========
@@ -263,6 +265,30 @@ function initializeEventListeners() {
     document.querySelectorAll('#fullscreen-btn, .action-btn[title="Fullscreen"]').forEach(btn => {
         btn.addEventListener('click', toggleFullscreen);
     });
+    
+    // Info button
+    const infoBtn = document.getElementById('info-btn');
+    if (infoBtn) {
+        infoBtn.addEventListener('click', toggleInfoPanel);
+    }
+}
+
+// ========== Info Panel Toggle ==========
+function toggleInfoPanel() {
+    const videoInfo = document.getElementById('video-info');
+    const infoBtn = document.getElementById('info-btn');
+    
+    if (!videoInfo) return;
+    
+    state.infoVisible = !state.infoVisible;
+    
+    if (state.infoVisible) {
+        videoInfo.style.display = 'block';
+        if (infoBtn) infoBtn.classList.add('active');
+    } else {
+        videoInfo.style.display = 'none';
+        if (infoBtn) infoBtn.classList.remove('active');
+    }
 }
 
 // ========== Initialize ==========
