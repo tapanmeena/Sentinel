@@ -122,14 +122,16 @@ function updateRecordingUI(isRecording) {
         // Recording active
         recBtn?.classList.add('rec-active');
         recBtn?.classList.remove('rec-inactive');
-        if (recBtnText) recBtnText.textContent = 'Stop REC';
+        if (recBtnText) recBtnText.textContent = 'STOP';
+        if (recBtn) recBtn.title = 'Stop Recording';
         recIndicator?.classList.add('recording-active');
         recIndicator?.classList.remove('recording-inactive');
     } else {
         // Recording inactive
         recBtn?.classList.remove('rec-active');
         recBtn?.classList.add('rec-inactive');
-        if (recBtnText) recBtnText.textContent = 'Start REC';
+        if (recBtnText) recBtnText.textContent = 'REC';
+        if (recBtn) recBtn.title = 'Start Recording';
         recIndicator?.classList.remove('recording-active');
         recIndicator?.classList.add('recording-inactive');
     }

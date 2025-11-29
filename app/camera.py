@@ -23,8 +23,8 @@ class Camera:
     _thumbnails_dir = "thumbnails"
     _current_recording_file = None
     _lock = threading.Lock()
-    _frame_width = 1280
-    _frame_height = 720
+    _frame_width = 1920
+    _frame_height = 1080
     _last_frame = None  # Store last frame for thumbnail
     
     # Motion detection settings
@@ -37,7 +37,7 @@ class Camera:
     _previous_frame = None
     _frame_buffer = None  # Will be initialized as deque
     _motion_config_file = "motion_config.json"
-    _fps = 20.0
+    _fps = 30.0
     
     def __new__(cls):
         if cls._instance is None:
@@ -49,15 +49,15 @@ class Camera:
     def _initialize_camera(cls):
         """Initialize the Picamera2 instance."""
         cls._camera = Picamera2()
-        config = cls._camera.create_video_configuration(main={"size": (1280, 720)})
+        config = cls._camera.create_video_configuration(main={"size": (1920, 1080)})
         cls._camera.configure(config)
         cls._camera.start()
         
         # Get actual frame dimensions
-        cls._frame_width = 1280
-        cls._frame_height = 720
+        cls._frame_width = 1920
+        cls._frame_height = 1080
         
-        # Initialize frame buffer for motion detection (5 seconds at 20fps = 100 frames)
+        # Initialize frame buffer for motion detection (5 seconds at 30fps = 150 frames)
         buffer_size = int(cls._motion_buffer_seconds * cls._fps)
         cls._frame_buffer = deque(maxlen=buffer_size)
         

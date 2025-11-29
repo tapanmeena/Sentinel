@@ -1879,7 +1879,183 @@ a.action-btn {
     background: #fff;
 }
 
-/* Motion status badge used in video overlay */
+/* ========== Video Controls Overlay ========== */
+.video-controls-overlay {
+    position: absolute;
+    bottom: 24px;
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.video-controls-overlay > * {
+    pointer-events: auto;
+}
+
+/* Motion Control */
+.motion-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+}
+
+.motion-control-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.motion-control-info svg {
+    color: var(--accent-amber);
+}
+
+/* Small Toggle for Video Overlay */
+.motion-toggle-small {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+}
+
+.motion-toggle-small input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider-small {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--glass-border);
+    border-radius: 11px;
+    transition: all 0.3s ease;
+}
+
+.toggle-slider-small::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.motion-toggle-small input:checked + .toggle-slider-small {
+    background: rgba(34, 211, 238, 0.2);
+    border-color: var(--accent-cyan);
+}
+
+.motion-toggle-small input:checked + .toggle-slider-small::before {
+    transform: translateX(18px);
+    background: var(--accent-cyan);
+    box-shadow: 0 0 8px var(--accent-cyan-glow);
+}
+
+/* Video Action Buttons */
+.video-action-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.video-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.video-action-btn svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.video-action-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+    border-color: var(--accent-cyan);
+    color: var(--text-primary);
+    transform: translateY(-2px);
+}
+
+/* Recording button states */
+.video-action-btn.rec-inactive svg {
+    fill: var(--text-muted);
+}
+
+.video-action-btn.rec-active {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+.video-action-btn.rec-active svg {
+    fill: var(--accent-red);
+    animation: pulse-rec 1s ease-in-out infinite;
+}
+
+@keyframes pulse-rec {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Motion Detected Alert */
+.motion-alert {
+    display: none;
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: rgba(239, 68, 68, 0.2);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: var(--radius-lg);
+    color: var(--accent-red);
+    font-size: 0.85rem;
+    font-weight: 600;
+    z-index: 10;
+    animation: motion-pulse 1.5s ease-in-out infinite;
+}
+
+.motion-alert.active {
+    display: flex;
+}
+
+.motion-alert-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent-red);
+    border-radius: 50%;
+    animation: blink 0.5s ease-in-out infinite;
+}
 
 /* ========== Settings Page ========== */
 .settings-main {
