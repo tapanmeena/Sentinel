@@ -239,14 +239,6 @@ function initializeEventListeners() {
     document.querySelectorAll('#fullscreen-btn, .action-btn[title="Fullscreen"]').forEach(btn => {
         btn.addEventListener('click', toggleFullscreen);
     });
-
-    // Navigation items
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', function() {
-            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-            this.classList.add('active');
-        });
-    });
 }
 
 // ========== Initialize ==========
@@ -264,5 +256,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set initial UI state (recording off by default)
     updateRecordingUI(false);
     
+    // Load recordings count
+    loadRecordingsCount();
+    
     console.log('SENTINEL Dashboard initialized');
 });
+
+// ========== Load Recordings Count ==========
+async function loadRecordingsCount() {
+    try {
+        const response = await fetch('/api/recordings');
+        const data = await response.json();
+        const countEl = document.getElementById('recordings-count');
+        if (countEl) {
+            countEl.textContent = data.recordings.length;
+        }
+    } catch (error) {
+        console.error('Failed to load recordings count:', error);
+    }
+}

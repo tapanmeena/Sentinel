@@ -38,14 +38,14 @@
                         </svg>
                         <span>Live View</span>
                     </div>
-                    <div class="nav-item" id="nav-recordings">
+                    <a href="/recordings" class="nav-item" id="nav-recordings">
                         <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="10"/>
                             <polygon points="10 8 16 12 10 16 10 8"/>
                         </svg>
                         <span>Recordings</span>
                         <span class="nav-badge" id="recordings-count">0</span>
-                    </div>
+                    </a>
                     <div class="nav-item">
                         <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -242,59 +242,6 @@
                 </div>
             </section>
         </main>
-    </div>
-
-    <!-- Recordings Modal -->
-    <div class="modal-overlay" id="recordings-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-title">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polygon points="10 8 16 12 10 16 10 8"/>
-                    </svg>
-                    <h2>Recordings</h2>
-                </div>
-                <button class="modal-close" id="close-recordings-modal">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <!-- Video Player -->
-                <div class="video-player-container" id="video-player-container" style="display: none;">
-                    <video id="video-player" controls>
-                        Your browser does not support the video tag.
-                    </video>
-                    <button class="back-to-list-btn" id="back-to-list">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="19" y1="12" x2="5" y2="12"/>
-                            <polyline points="12 19 5 12 12 5"/>
-                        </svg>
-                        Back to list
-                    </button>
-                </div>
-                
-                <!-- Recordings List -->
-                <div class="recordings-list" id="recordings-list">
-                    <div class="recordings-loading" id="recordings-loading">
-                        <div class="spinner"></div>
-                        <span>Loading recordings...</span>
-                    </div>
-                    <div class="recordings-empty" id="recordings-empty" style="display: none;">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polygon points="10 8 16 12 10 16 10 8"/>
-                        </svg>
-                        <p>No recordings found</p>
-                        <span>Start recording to see your videos here</span>
-                    </div>
-                    <div class="recordings-grid" id="recordings-grid"></div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>

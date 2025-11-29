@@ -165,6 +165,24 @@ class Camera:
         return recordings
     
     @classmethod
+    def delete_recording(cls, filename):
+        """Delete a recording file."""
+        # Security: prevent path traversal
+        if '..' in filename or '/' in filename:
+            return {"success": False, "message": "Invalid filename"}
+        
+        filepath = os.path.join(cls._recordings_dir, filename)
+        
+        if not os.path.exists(filepath):
+            return {"success": False, "message": "Recording not found"}
+        
+        try:
+            os.remove(filepath)
+            return {"success": True, "message": "Recording deleted"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+    
+    @classmethod
     def capture_snapshot(cls):
         """Capture a snapshot image."""
         if cls._camera is None:

@@ -12,6 +12,12 @@ def index():
     return render_template('index.html')
 
 
+@main_bp.route('/recordings')
+def recordings_page():
+    """Render the recordings page."""
+    return render_template('recordings.html')
+
+
 @main_bp.route('/stream')
 def stream():
     """Video streaming route."""
@@ -49,6 +55,13 @@ def list_recordings():
     """Get list of all recordings."""
     recordings = Camera.get_recordings_list()
     return jsonify({"recordings": recordings})
+
+
+@main_bp.route('/api/recordings/<filename>', methods=['DELETE'])
+def delete_recording(filename):
+    """Delete a recording file."""
+    result = Camera.delete_recording(filename)
+    return jsonify(result)
 
 
 # ========== Snapshot API ==========
