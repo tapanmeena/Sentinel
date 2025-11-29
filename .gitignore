@@ -1,1 +1,6 @@
 *.pyc
+recordings/
+snapshots/
+__pycache__/
+.env
+.venv
