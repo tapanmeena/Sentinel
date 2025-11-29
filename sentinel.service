@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=tapan-pi
 WorkingDirectory=/home/tapan-pi/Desktop/live-stream
+EnvironmentFile=/home/tapan-pi/Desktop/live-stream/.env
 Environment="PATH=/home/tapan-pi/Desktop/live-stream/.venv/bin:/usr/bin"
 ExecStart=/home/tapan-pi/Desktop/live-stream/.venv/bin/gunicorn --bind 0.0.0.0:8034 --workers 1 --threads 4 run:app
 Restart=always

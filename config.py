@@ -1,5 +1,10 @@
 """Configuration settings for the application."""
 import os
+from datetime import timedelta
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 
 
 class Config:
@@ -7,6 +12,12 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
     DEBUG = False
     TESTING = False
+    
+    # Session settings
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
+    SESSION_COOKIE_SECURE = True  # Only send cookie over HTTPS
+    SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access
+    SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF protection
     
     # Server settings
     HOST = os.environ.get('HOST', '0.0.0.0')
@@ -20,6 +31,7 @@ class Config:
 class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
+    SESSION_COOKIE_SECURE = False  # Allow HTTP in development
 
 
 class ProductionConfig(Config):

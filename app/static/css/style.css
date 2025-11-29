@@ -310,6 +310,12 @@ body {
     color: var(--text-primary);
 }
 
+.logout-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
 /* ========== Main Content ========== */
 .main {
     padding: 32px;
