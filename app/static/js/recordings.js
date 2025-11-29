@@ -84,9 +84,13 @@ function showRecordingsList() {
     document.getElementById('recordings-section').style.display = 'block';
     document.getElementById('video-player-section').style.display = 'none';
     const videoPlayer = document.getElementById('video-player');
+    const videoSource = document.getElementById('video-source');
     if (videoPlayer) {
         videoPlayer.pause();
-        videoPlayer.src = '';
+        if (videoSource) {
+            videoSource.src = '';
+        }
+        videoPlayer.load();
     }
 }
 
@@ -326,10 +330,16 @@ function createRecordingRow(recording) {
 
 function playRecording(filename) {
     const videoPlayer = document.getElementById('video-player');
-    if (videoPlayer) {
-        videoPlayer.src = `/recordings/play/${filename}`;
+    const videoSource = document.getElementById('video-source');
+    if (videoPlayer && videoSource) {
+        videoSource.src = `/recordings/play/${filename}`;
+        videoSource.type = 'video/mp4';
+        videoPlayer.load();  // Reload video with new source
         showVideoPlayer(filename);
-        videoPlayer.play();
+        videoPlayer.play().catch(e => {
+            console.error('Playback error:', e);
+            showNotification('Unable to play video. Try downloading instead.', 'warning');
+        });
     }
 }
 

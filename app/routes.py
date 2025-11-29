@@ -86,7 +86,7 @@ def download_recording(filename):
 def play_recording(filename):
     """Stream a recording file for playback."""
     recordings_dir = os.path.join(os.getcwd(), 'recordings')
-    return send_from_directory(recordings_dir, filename, as_attachment=False)
+    return send_from_directory(recordings_dir, filename, as_attachment=False, mimetype='video/mp4')
 
 
 @main_bp.route('/snapshots/<filename>')

@@ -1,0 +1,14 @@
+[Unit]
+Description=SENTINEL Security Dashboard
+After=network.target
+
+[Service]
+User=tapan-pi
+WorkingDirectory=/home/tapan-pi/Desktop/live-stream
+Environment="PATH=/home/tapan-pi/Desktop/live-stream/.venv/bin:/usr/bin"
+ExecStart=/home/tapan-pi/Desktop/live-stream/.venv/bin/gunicorn --bind 0.0.0.0:8034 --workers 1 --threads 4 run:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

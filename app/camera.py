@@ -92,7 +92,7 @@ class Camera:
             
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"recording_{timestamp}.avi"
+            filename = f"recording_{timestamp}.mp4"
             cls._current_recording_file = os.path.join(cls._recordings_dir, filename)
             
             # Get frame dimensions from camera
@@ -104,8 +104,9 @@ class Camera:
                 test_frame = cls._camera.capture_array()
                 cls._frame_height, cls._frame_width = test_frame.shape[:2]
             
-            # Initialize video writer with correct dimensions
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            # Initialize video writer with MP4 format (browser compatible)
+            # Use mp4v codec which is widely supported
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             cls._video_writer = cv2.VideoWriter(
                 cls._current_recording_file,
                 fourcc,
@@ -196,7 +197,7 @@ class Camera:
         recordings = []
         if os.path.exists(cls._recordings_dir):
             for filename in os.listdir(cls._recordings_dir):
-                if filename.endswith(('.avi', '.mp4')):
+                if filename.endswith('.mp4'):
                     filepath = os.path.join(cls._recordings_dir, filename)
                     stat = os.stat(filepath)
                     
