@@ -6,7 +6,15 @@
 const state = {
     isRecording: false,
     recSeconds: 0,
-    recInterval: null
+    recInterval: null,
+    // Motion detection state
+    motionEnabled: false,
+    motionDetected: false,
+    motionSettings: {
+        sensitivity: 30,
+        cooldown: 10,
+        buffer_seconds: 5
+    }
 };
 
 // ========== Time & Date Display ==========
@@ -273,6 +281,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load recordings count
     loadRecordingsCount();
     
+    // Initialize motion detection
+    loadMotionStatus().then(() => {
+        initializeMotionListeners();
+        // Only start polling if motion is enabled
+        if (state.motionEnabled) {
+            startMotionStatusPolling();
+        }
+    });
+    
     console.log('SENTINEL Dashboard initialized');
 });
 
@@ -288,4 +305,275 @@ async function loadRecordingsCount() {
     } catch (error) {
         console.error('Failed to load recordings count:', error);
     }
+}
+
+// ========== Motion Detection ==========
+async function loadMotionStatus() {
+    try {
+        const response = await fetch('/api/motion/status');
+        const data = await response.json();
+        
+        state.motionEnabled = data.enabled;
+        state.motionDetected = data.motion_detected;
+        state.motionSettings = {
+            sensitivity: data.sensitivity,
+            cooldown: data.cooldown,
+            buffer_seconds: data.buffer_seconds
+        };
+        
+        updateMotionUI();
+        updateMotionSettingsUI();
+        
+        // If motion is recording, update recording UI
+        if (data.is_motion_recording) {
+            state.isRecording = true;
+            updateRecordingUI(true);
+        }
+    } catch (error) {
+        console.error('Failed to load motion status:', error);
+    }
+}
+
+function updateMotionUI() {
+    const toggle = document.getElementById('motion-toggle');
+    const badge = document.getElementById('motion-status-badge');
+    const settings = document.getElementById('motion-settings');
+    const indicator = document.getElementById('motion-indicator');
+    const videoWrapper = document.querySelector('.video-wrapper');
+    
+    // Update toggle
+    if (toggle) {
+        toggle.checked = state.motionEnabled;
+    }
+    
+    // Update badge
+    if (badge) {
+        badge.classList.remove('active', 'detecting');
+        if (state.motionEnabled) {
+            if (state.motionDetected) {
+                badge.textContent = 'MOTION';
+                badge.classList.add('detecting');
+            } else {
+                badge.textContent = 'ON';
+                badge.classList.add('active');
+            }
+        } else {
+            badge.textContent = 'OFF';
+        }
+    }
+    
+    // Show/hide settings
+    if (settings) {
+        settings.classList.toggle('active', state.motionEnabled);
+    }
+    
+    // Show/hide motion indicator
+    if (indicator) {
+        indicator.classList.toggle('active', state.motionEnabled && state.motionDetected);
+    }
+    
+    // Visual feedback on video
+    if (videoWrapper) {
+        videoWrapper.classList.toggle('motion-active', state.motionEnabled && state.motionDetected);
+    }
+}
+
+function updateMotionSettingsUI() {
+    // Sensitivity
+    const sensitivitySlider = document.getElementById('sensitivity-slider');
+    const sensitivityValue = document.getElementById('sensitivity-value');
+    if (sensitivitySlider) {
+        sensitivitySlider.value = state.motionSettings.sensitivity;
+    }
+    if (sensitivityValue) {
+        const level = getSensitivityLevel(state.motionSettings.sensitivity);
+        sensitivityValue.textContent = `${level} (${state.motionSettings.sensitivity})`;
+    }
+    
+    // Cooldown
+    const cooldownSlider = document.getElementById('cooldown-slider');
+    const cooldownValue = document.getElementById('cooldown-value');
+    if (cooldownSlider) {
+        cooldownSlider.value = state.motionSettings.cooldown;
+    }
+    if (cooldownValue) {
+        cooldownValue.textContent = `${state.motionSettings.cooldown}s`;
+    }
+    
+    // Buffer
+    const bufferSlider = document.getElementById('buffer-slider');
+    const bufferValue = document.getElementById('buffer-value');
+    if (bufferSlider) {
+        bufferSlider.value = state.motionSettings.buffer_seconds;
+    }
+    if (bufferValue) {
+        bufferValue.textContent = `${state.motionSettings.buffer_seconds}s`;
+    }
+}
+
+function getSensitivityLevel(value) {
+    if (value <= 15) return 'High';
+    if (value <= 30) return 'Medium';
+    if (value <= 50) return 'Low';
+    return 'Very Low';
+}
+
+async function toggleMotion(enabled) {
+    try {
+        const endpoint = enabled ? '/api/motion/enable' : '/api/motion/disable';
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            state.motionEnabled = enabled;
+            updateMotionUI();
+            
+            // Start or stop polling based on new state
+            if (enabled) {
+                startMotionStatusPolling();
+            } else if (motionPollInterval) {
+                clearInterval(motionPollInterval);
+                motionPollInterval = null;
+            }
+            
+            showNotification(
+                enabled ? 'Motion detection enabled' : 'Motion detection disabled',
+                'success'
+            );
+        } else {
+            showNotification(data.message || 'Failed to toggle motion detection', 'error');
+            // Revert toggle
+            const toggle = document.getElementById('motion-toggle');
+            if (toggle) toggle.checked = !enabled;
+        }
+    } catch (error) {
+        console.error('Motion toggle error:', error);
+        showNotification('Connection error', 'error');
+    }
+}
+
+async function updateMotionSetting(setting, value) {
+    try {
+        const response = await fetch('/api/motion/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [setting]: value })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            state.motionSettings = data.settings;
+            updateMotionSettingsUI();
+        }
+    } catch (error) {
+        console.error('Motion settings error:', error);
+    }
+}
+
+function initializeMotionListeners() {
+    // Motion toggle
+    const motionToggle = document.getElementById('motion-toggle');
+    if (motionToggle) {
+        motionToggle.addEventListener('change', (e) => {
+            toggleMotion(e.target.checked);
+        });
+    }
+    
+    // Sensitivity slider
+    const sensitivitySlider = document.getElementById('sensitivity-slider');
+    if (sensitivitySlider) {
+        sensitivitySlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            const sensitivityValue = document.getElementById('sensitivity-value');
+            if (sensitivityValue) {
+                const level = getSensitivityLevel(value);
+                sensitivityValue.textContent = `${level} (${value})`;
+            }
+        });
+        sensitivitySlider.addEventListener('change', (e) => {
+            updateMotionSetting('sensitivity', parseInt(e.target.value));
+        });
+    }
+    
+    // Cooldown slider
+    const cooldownSlider = document.getElementById('cooldown-slider');
+    if (cooldownSlider) {
+        cooldownSlider.addEventListener('input', (e) => {
+            const cooldownValue = document.getElementById('cooldown-value');
+            if (cooldownValue) {
+                cooldownValue.textContent = `${e.target.value}s`;
+            }
+        });
+        cooldownSlider.addEventListener('change', (e) => {
+            updateMotionSetting('cooldown', parseInt(e.target.value));
+        });
+    }
+    
+    // Buffer slider
+    const bufferSlider = document.getElementById('buffer-slider');
+    if (bufferSlider) {
+        bufferSlider.addEventListener('input', (e) => {
+            const bufferValue = document.getElementById('buffer-value');
+            if (bufferValue) {
+                bufferValue.textContent = `${e.target.value}s`;
+            }
+        });
+        bufferSlider.addEventListener('change', (e) => {
+            updateMotionSetting('buffer_seconds', parseInt(e.target.value));
+        });
+    }
+}
+
+// Poll motion status periodically (only when motion is enabled)
+let motionPollInterval = null;
+
+function startMotionStatusPolling() {
+    // Clear any existing interval
+    if (motionPollInterval) {
+        clearInterval(motionPollInterval);
+    }
+    
+    // Only poll if motion is enabled
+    if (!state.motionEnabled) {
+        return;
+    }
+    
+    motionPollInterval = setInterval(async () => {
+        // Stop polling if motion gets disabled
+        if (!state.motionEnabled) {
+            clearInterval(motionPollInterval);
+            motionPollInterval = null;
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/motion/status');
+            const data = await response.json();
+            
+            const wasDetected = state.motionDetected;
+            state.motionDetected = data.motion_detected;
+            
+            // Update UI if state changed
+            if (wasDetected !== state.motionDetected) {
+                updateMotionUI();
+            }
+            
+            // Sync recording state
+            if (data.is_motion_recording && !state.isRecording) {
+                state.isRecording = true;
+                updateRecordingUI(true);
+            } else if (!data.is_motion_recording && state.isRecording) {
+                // Check if it was a motion recording that stopped
+                const statusResponse = await fetch('/api/recording/status');
+                const statusData = await statusResponse.json();
+                if (!statusData.is_recording) {
+                    state.isRecording = false;
+                    stopRecTimer();
+                    updateRecordingUI(false);
+                }
+            }
+        } catch (error) {
+            // Silent fail for polling
+        }
+    }, 1000);
 }

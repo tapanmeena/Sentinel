@@ -1,5 +1,5 @@
 """Route definitions for the Flask application."""
-from flask import Blueprint, Response, render_template, jsonify, send_from_directory
+from flask import Blueprint, Response, render_template, jsonify, send_from_directory, request
 from app.camera import Camera
 from app.auth import login_required, get_current_user
 import os
@@ -19,6 +19,13 @@ def index():
 def recordings_page():
     """Render the recordings page."""
     return render_template('recordings.html', username=get_current_user())
+
+
+@main_bp.route('/settings')
+@login_required
+def settings_page():
+    """Render the settings page."""
+    return render_template('settings.html', username=get_current_user())
 
 
 @main_bp.route('/stream')
@@ -115,3 +122,51 @@ def get_thumbnail(filename):
     """Serve a recording thumbnail."""
     thumbnails_dir = os.path.join(os.getcwd(), 'thumbnails')
     return send_from_directory(thumbnails_dir, filename, as_attachment=False)
+
+
+# ========== Motion Detection API ==========
+
+@main_bp.route('/api/motion/status')
+@login_required
+def motion_status():
+    """Get motion detection status."""
+    result = Camera.get_motion_status()
+    return jsonify(result)
+
+
+@main_bp.route('/api/motion/enable', methods=['POST'])
+@login_required
+def enable_motion():
+    """Enable motion detection."""
+    result = Camera.enable_motion_detection()
+    return jsonify(result)
+
+
+@main_bp.route('/api/motion/disable', methods=['POST'])
+@login_required
+def disable_motion():
+    """Disable motion detection."""
+    result = Camera.disable_motion_detection()
+    return jsonify(result)
+
+
+@main_bp.route('/api/motion/settings', methods=['GET', 'POST'])
+@login_required
+def motion_settings():
+    """Get or update motion detection settings."""
+    if request.method == 'GET':
+        status = Camera.get_motion_status()
+        return jsonify({
+            "sensitivity": status['sensitivity'],
+            "cooldown": status['cooldown'],
+            "buffer_seconds": status['buffer_seconds']
+        })
+    
+    # POST - update settings
+    data = request.get_json() or {}
+    result = Camera.set_motion_settings(
+        sensitivity=data.get('sensitivity'),
+        cooldown=data.get('cooldown'),
+        buffer_seconds=data.get('buffer_seconds')
+    )
+    return jsonify(result)

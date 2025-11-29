@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "sensitivity": 30,
+  "cooldown": 10,
+  "buffer_seconds": 5
+}
