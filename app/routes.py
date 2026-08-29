@@ -1,5 +1,16 @@
 """Route definitions for the Flask application."""
-from flask import Blueprint, Response, render_template, jsonify, send_from_directory, request
+from urllib.parse import quote
+
+from flask import (
+    Blueprint,
+    Response,
+    make_response,
+    render_template,
+    jsonify,
+    send_from_directory,
+    request,
+    url_for,
+)
 from app.camera import Camera, CameraManager
 from app.auth import login_required, get_current_user
 import os
@@ -85,6 +96,37 @@ def stream_camera(camera_id):
     )
 
 
+@main_bp.route('/embed/stream/<camera_id>')
+@login_required
+def embed_stream(camera_id):
+    """Standalone MJPEG viewer page, intended for the mobile app's WebView."""
+    camera = CameraManager.get(camera_id)
+    if not camera:
+        return jsonify({"error": "Camera not found"}), 404
+
+    token = request.args.get('token', '')
+    stream_url = url_for('main.stream_camera', camera_id=camera_id)
+    if token:
+        stream_url = f"{stream_url}?token={quote(token, safe='')}"
+
+    fit = 'cover' if request.args.get('fit') == 'cover' else 'contain'
+
+    response = make_response(render_template(
+        'embed_stream.html',
+        camera_name=camera.name,
+        stream_url=stream_url,
+        fit=fit,
+    ))
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'none'; img-src 'self'; script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    )
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 # ========== Recording API ==========
 
 @main_bp.route('/api/recording/start', methods=['POST'])
@@ -151,6 +193,13 @@ def list_recordings():
     camera_id = request.args.get('camera_id')
     recordings = CameraManager.get_recordings_list(camera_id)
     return jsonify({"recordings": recordings})
+
+
+@main_bp.route('/api/storage/stats')
+@login_required
+def storage_stats():
+    """Get aggregate recording counts and sizes per camera."""
+    return jsonify(CameraManager.get_storage_stats())
 
 
 @main_bp.route('/api/recordings/<camera_id>/<filename>', methods=['DELETE'])

@@ -904,6 +904,46 @@ class CameraManager:
             return {"success": False, "message": str(e)}
     
     @classmethod
+    def get_storage_stats(cls) -> dict:
+        """Aggregate recording counts and sizes without listing every file."""
+        per_camera = []
+        total_count = 0
+        total_size = 0
+        
+        for cam_id in cls.list_all():
+            camera = cls.get(cam_id)
+            if not camera:
+                continue
+            
+            count = 0
+            size = 0
+            recordings_dir = camera._recordings_dir
+            
+            if os.path.exists(recordings_dir):
+                for filename in os.listdir(recordings_dir):
+                    if filename.endswith('.mp4'):
+                        try:
+                            size += os.path.getsize(os.path.join(recordings_dir, filename))
+                            count += 1
+                        except OSError:
+                            continue
+            
+            per_camera.append({
+                "camera_id": cam_id,
+                "camera_name": camera.name,
+                "count": count,
+                "size": size
+            })
+            total_count += count
+            total_size += size
+        
+        return {
+            "recordings_count": total_count,
+            "total_size_bytes": total_size,
+            "per_camera": per_camera
+        }
+    
+    @classmethod
     def release_all(cls) -> None:
         """Release all cameras."""
         for camera in cls._cameras.values():

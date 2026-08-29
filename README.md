@@ -21,8 +21,9 @@ A professional, futuristic security camera streaming dashboard for Raspberry Pi 
 live-stream/
 ├── app/
 │   ├── __init__.py           # Application factory
-│   ├── auth.py               # Authentication utilities
+│   ├── auth.py               # Authentication utilities (session + bearer tokens)
 │   ├── auth_routes.py        # Login/logout routes
+│   ├── api_auth.py           # JSON auth API for the mobile app
 │   ├── camera.py             # Multi-camera module (PiCamera, RTSP)
 │   ├── routes.py             # Flask route definitions
 │   ├── static/
@@ -40,13 +41,15 @@ live-stream/
 │       ├── login.html        # Login page
 │       ├── recordings.html   # Recordings browser
 │       ├── settings.html     # Settings page
-│       └── devices.html      # Camera management page
+│       ├── devices.html      # Camera management page
+│       └── embed_stream.html # Standalone MJPEG viewer for the mobile app
 ├── config.py                 # Configuration settings
 ├── run.py                    # Application entry point
 ├── requirements.txt          # Python dependencies
 ├── motion_config.json        # Per-camera motion detection settings
 ├── sentinel.service          # Systemd service file
 ├── .env                      # Environment variables (credentials)
+├── mobile/                   # Expo mobile app (Android + iOS)
 ├── recordings/               # Video recordings (per-camera subdirs)
 ├── thumbnails/               # Recording thumbnails
 └── snapshots/                # Manual snapshots
@@ -187,15 +190,46 @@ Motion settings are stored in `motion_config.json` per camera:
 | Devices | `/devices` | Camera status and management |
 | Login | `/login` | Authentication page |
 
+## � JSON API for native clients
+
+Browsers keep using the session cookie flow. Native clients authenticate with a signed bearer
+token instead, and receive JSON `401` responses rather than a redirect to the login page.
+
+| Endpoint | Method | Description |
+|-----------------------------|--------|--------------------------------------------------------|
+| `/api/auth/login` | POST | Exchange credentials for a bearer token (30 day expiry) |
+| `/api/auth/logout` | POST | Clear any browser session |
+| `/api/auth/me` | GET | Return the authenticated username |
+| `/api/auth/media-token` | POST | Issue a 5 minute, read-only token for media URLs |
+| `/api/storage/stats` | GET | Recording counts and sizes, per camera |
+| `/embed/stream/<camera_id>` | GET | Standalone MJPEG viewer page for the mobile WebView |
+
+Send the token as `Authorization: Bearer <token>`. Media URLs such as `/stream/<id>`,
+`/thumbnails/...`, and `/recordings/play/...` cannot carry headers, so they additionally accept
+`?token=<media-token>`. Media tokens are signed with a separate salt, expire in five minutes, and
+are rejected by every `/api/*` and write endpoint.
+
+Tokens are stateless and signed with `SECRET_KEY`, so no database is required. Rotating
+`SECRET_KEY` invalidates every issued token.
+
 ## 🔒 Security
 
-- Session-based authentication
+- Session-based authentication for browsers, signed bearer tokens for the mobile app
+- Constant-time credential comparison
 - HTTP-only secure cookies
 - CSRF protection via SameSite cookies
 - Environment variable credential storage
 - No hardcoded passwords in source
 
-## 📱 Mobile Support
+## 📱 Mobile
+
+A native Expo app for Android and iOS lives in [mobile/](mobile/). It covers live streaming,
+multi-camera grid view, recording controls, snapshots, the recordings browser with playback and
+downloads, per-camera motion settings, and device status.
+
+See [mobile/README.md](mobile/README.md) for setup and build instructions.
+
+The web dashboard also stays fully usable on a phone browser:
 
 - Responsive design with hamburger menu
 - Touch-friendly controls
