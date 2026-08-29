@@ -19,12 +19,18 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SENTINEL_URL": "https://camera.tapanmeena.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SENTINEL_URL": "https://camera.tapanmeena.com"
       }
     }
   },
