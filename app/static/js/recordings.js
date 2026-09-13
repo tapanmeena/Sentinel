@@ -2,12 +2,14 @@
  * SENTINEL Security Dashboard - Recordings Page JavaScript
  */
 
+window._pageJsInitialized = true;
+
 // ========== State ==========
 let currentView = 'grid';
 let recordingsData = [];
 let currentCameraFilter = 'all';
 const cameras = window.CAMERAS || {};
-let theme = localStorage.getItem('sentinel-theme') || 'dark';
+let theme = localStorage.getItem('sentinel-theme') || 'light';
 let mobileNavOpen = false;
 
 // ========== Time & Date Display ==========

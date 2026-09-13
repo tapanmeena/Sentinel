@@ -8,7 +8,7 @@
 // Only define if not already defined by page-specific JS
 if (typeof window.initTheme === 'undefined') {
     window.initTheme = function() {
-        const theme = localStorage.getItem('sentinel-theme') || 'dark';
+        const theme = localStorage.getItem('sentinel-theme') || 'light';
         document.documentElement.setAttribute('data-theme', theme);
     };
 }
@@ -109,6 +109,44 @@ if (typeof window.loadRecordingsCount === 'undefined') {
 }
 
 // ========== Initialize Common Features ==========
+window.loadStorageStats = async function() {
+    const meter = document.getElementById('sidebar-storage-meter');
+    const percent = document.getElementById('sidebar-storage-percent');
+    const detail = document.getElementById('sidebar-storage-detail');
+    if (!meter || window._storageStatsPending) return;
+    window._storageStatsPending = true;
+    const formatBytes = bytes => {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const unit = Math.min(Math.floor(Math.log(Math.max(1, bytes)) / Math.log(1024)), units.length - 1);
+        return `${(bytes / 1024 ** unit).toFixed(unit > 1 ? 1 : 0)} ${units[unit]}`;
+    };
+    try {
+        const response = await fetch('/api/storage/stats', { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error('Storage unavailable');
+        const data = await response.json();
+        const usage = data.disk_usage;
+        if (usage?.total_bytes > 0) {
+            const used = Math.min(100, Math.max(0, Math.round(usage.used_bytes / usage.total_bytes * 100)));
+            meter.value = used;
+            meter.hidden = false;
+            meter.setAttribute('aria-label', `Local storage ${used}% used`);
+            percent.textContent = `${used}%`;
+            detail.textContent = `${formatBytes(usage.free_bytes)} available`;
+        } else {
+            meter.hidden = true;
+            percent.textContent = '--';
+            detail.textContent = `${formatBytes(data.total_size_bytes || 0)} in recordings`;
+        }
+        document.getElementById('sidebar-connection-dot')?.classList.add('connected');
+    } catch {
+        meter.hidden = true;
+        percent.textContent = '--';
+        detail.textContent = 'Storage unavailable';
+    } finally {
+        window._storageStatsPending = false;
+    }
+};
+
 // Mark that common.js has loaded
 window._commonJsLoaded = true;
 
@@ -117,6 +155,11 @@ window.initTheme();
 
 // Initialize other features when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
+    window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
+    window.loadStorageStats();
+    document.querySelectorAll('[data-device-preview]').forEach(image => {
+        image.addEventListener('error', () => { image.hidden = true; });
+    });
     // Only run if page-specific JS hasn't already initialized these
     if (!window._pageJsInitialized) {
         // Theme toggle button
@@ -134,6 +177,6 @@ document.addEventListener('DOMContentLoaded', function() {
         setInterval(window.updateDateTime, 1000);
         
         // Load recordings count
-        window.loadRecordingsCount();
+        if (document.getElementById('recordings-count')) window.loadRecordingsCount();
     }
 });

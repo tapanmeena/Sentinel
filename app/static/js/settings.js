@@ -2,6 +2,8 @@
  * SENTINEL Security Dashboard - Settings Page JavaScript
  */
 
+window._pageJsInitialized = true;
+
 // ========== State ==========
 const state = {
     motionEnabled: false,
@@ -11,7 +13,7 @@ const state = {
         buffer_seconds: 5
     },
     // Theme state
-    theme: localStorage.getItem('sentinel-theme') || 'dark',
+    theme: localStorage.getItem('sentinel-theme') || 'light',
     // Mobile nav state
     mobileNavOpen: false
 };

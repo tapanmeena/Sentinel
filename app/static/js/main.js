@@ -2,9 +2,16 @@
  * SENTINEL Security Dashboard - Main JavaScript
  */
 
+window._pageJsInitialized = true;
+
 // ========== State Management ==========
 const state = {
     isRecording: false,
+    recordingKnown: false,
+    motionKnown: false,
+    recordingPending: false,
+    motionPending: false,
+    snapshotPending: false,
     recSeconds: 0,
     recInterval: null,
     // Motion detection state
@@ -21,12 +28,48 @@ const state = {
     cameras: window.CAMERAS || {},
     currentCameraId: null,
     cameraStatuses: {},
-    gridViewActive: false,
+    selectionVersion: 0,
+    gridViewActive: localStorage.getItem('sentinel-layout') !== 'focus',
+    recordings: [],
     // Theme state
-    theme: localStorage.getItem('sentinel-theme') || 'dark',
+    theme: localStorage.getItem('sentinel-theme') || 'light',
     // Mobile nav state
     mobileNavOpen: false
 };
+
+function setText(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, {
+        ...options,
+        headers: { Accept: 'application/json', ...options.headers },
+        signal: options.signal || AbortSignal.timeout(10000)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || data.error || 'Request failed');
+    return data;
+}
+
+function cameraEndpoint(resource, cameraId = state.currentCameraId) {
+    return `/api/${resource}/${encodeURIComponent(cameraId)}`;
+}
+
+function isCurrentSelection(cameraId, version) {
+    return cameraId === state.currentCameraId && version === state.selectionVersion;
+}
+
+function updateControlAvailability() {
+    const connected = state.cameraStatuses[state.currentCameraId]?.state === 'connected';
+    const recordButton = document.getElementById('rec-btn');
+    const snapshotButton = document.getElementById('snapshot-btn');
+    const motionToggle = document.getElementById('motion-toggle');
+    if (recordButton) recordButton.disabled = !state.recordingKnown || state.recordingPending || (!connected && !state.isRecording);
+    if (snapshotButton) snapshotButton.disabled = !connected || state.snapshotPending;
+    if (motionToggle) motionToggle.disabled = !state.motionKnown || state.motionPending || !state.currentCameraId;
+}
 
 // ========== Time & Date Display ==========
 function updateDateTime() {
@@ -64,6 +107,7 @@ function updateRecTime() {
 }
 
 function startRecTimer(initialSeconds = 0) {
+    if (state.recInterval) clearInterval(state.recInterval);
     state.recSeconds = initialSeconds;
     updateRecTimeDisplay();
     state.recInterval = setInterval(updateRecTime, 1000);
@@ -87,40 +131,30 @@ function updateRecTimeDisplay() {
 
 // ========== Recording Controls ==========
 async function toggleRecording() {
-    const recBtn = document.getElementById('rec-btn');
-    const recIndicator = document.querySelector('.rec-indicator');
-    
+    const cameraId = state.currentCameraId;
+    const version = state.selectionVersion;
+    if (!cameraId || !state.recordingKnown || state.recordingPending) return;
+    const wasRecording = state.isRecording;
+    state.recordingPending = true;
+    updateControlAvailability();
     try {
-        if (state.isRecording) {
-            // Stop recording
-            const response = await fetch('/api/recording/stop', { method: 'POST' });
-            const data = await response.json();
-            
-            if (data.success) {
-                state.isRecording = false;
-                stopRecTimer();
-                updateRecordingUI(false);
-                showNotification('Recording saved', 'success');
-            } else {
-                showNotification(data.message || 'Failed to stop recording', 'error');
-            }
-        } else {
-            // Start recording
-            const response = await fetch('/api/recording/start', { method: 'POST' });
-            const data = await response.json();
-            
-            if (data.success) {
-                state.isRecording = true;
-                startRecTimer();
-                updateRecordingUI(true);
-                showNotification('Recording started', 'success');
-            } else {
-                showNotification(data.message || 'Failed to start recording', 'error');
-            }
+        const data = await fetchJson(cameraEndpoint(`recording/${wasRecording ? 'stop' : 'start'}`, cameraId), { method: 'POST' });
+        if (!data.success) throw new Error(data.message || 'Recording action failed');
+        if (isCurrentSelection(cameraId, version)) {
+            state.isRecording = !wasRecording;
+            if (wasRecording) stopRecTimer();
+            else startRecTimer();
+            updateRecordingUI(state.isRecording);
         }
+        if (state.cameraStatuses[cameraId]) state.cameraStatuses[cameraId].is_recording = !wasRecording;
+        updateGridCameraStatuses();
+        showNotification(`${wasRecording ? 'Recording saved' : 'Recording started'}: ${state.cameras[cameraId].name || cameraId}`, 'success');
+        if (wasRecording) loadRecordingsCount();
     } catch (error) {
-        console.error('Recording error:', error);
-        showNotification('Connection error', 'error');
+        showNotification(error.message || 'Connection error', 'error');
+    } finally {
+        state.recordingPending = false;
+        updateControlAvailability();
     }
 }
 
@@ -133,7 +167,7 @@ function updateRecordingUI(isRecording) {
         // Recording active
         recBtn?.classList.add('rec-active');
         recBtn?.classList.remove('rec-inactive');
-        if (recBtnText) recBtnText.textContent = 'STOP';
+        if (recBtnText) recBtnText.textContent = 'Stop';
         if (recBtn) recBtn.title = 'Stop Recording';
         recIndicator?.classList.add('recording-active');
         recIndicator?.classList.remove('recording-inactive');
@@ -141,27 +175,30 @@ function updateRecordingUI(isRecording) {
         // Recording inactive
         recBtn?.classList.remove('rec-active');
         recBtn?.classList.add('rec-inactive');
-        if (recBtnText) recBtnText.textContent = 'REC';
+        if (recBtnText) recBtnText.textContent = 'Record';
         if (recBtn) recBtn.title = 'Start Recording';
         recIndicator?.classList.remove('recording-active');
         recIndicator?.classList.add('recording-inactive');
     }
+    recBtn?.setAttribute('aria-pressed', String(isRecording));
+    updateControlAvailability();
 }
 
 // ========== Snapshot ==========
 async function captureSnapshot() {
+    const cameraId = state.currentCameraId;
+    if (!cameraId || state.snapshotPending) return;
+    state.snapshotPending = true;
+    updateControlAvailability();
     try {
-        const response = await fetch('/api/snapshot', { method: 'POST' });
-        const data = await response.json();
-        
-        if (data.success) {
-            showNotification(`Snapshot saved: ${data.filename}`, 'success');
-        } else {
-            showNotification('Failed to capture snapshot', 'error');
-        }
+        const data = await fetchJson(cameraEndpoint('snapshot', cameraId), { method: 'POST' });
+        if (!data.success) throw new Error(data.message || 'Failed to capture snapshot');
+        showNotification(`Snapshot saved: ${data.filename}`, 'success');
     } catch (error) {
-        console.error('Snapshot error:', error);
-        showNotification('Connection error', 'error');
+        showNotification(error.message || 'Connection error', 'error');
+    } finally {
+        state.snapshotPending = false;
+        updateControlAvailability();
     }
 }
 
@@ -172,6 +209,8 @@ function createNotificationContainer() {
         container = document.createElement('div');
         container.id = 'notification-container';
         container.className = 'notification-container';
+        container.setAttribute('role', 'status');
+        container.setAttribute('aria-live', 'polite');
         document.body.appendChild(container);
     }
     return container;
@@ -179,37 +218,24 @@ function createNotificationContainer() {
 
 function showNotification(message, type = 'info') {
     const container = createNotificationContainer();
-    
-    // Create notification element
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
-    
-    // Icon based on type
-    const icons = {
-        success: `<svg class="notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
-        error: `<svg class="notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-        warning: `<svg class="notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-        info: `<svg class="notification-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
-    };
-    
-    notification.innerHTML = `
-        ${icons[type] || icons.info}
-        <span class="notification-message">${message}</span>
-        <button class="notification-dismiss" aria-label="Dismiss">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-        </button>
-    `;
-    
-    // Add dismiss handler
-    const dismissBtn = notification.querySelector('.notification-dismiss');
-    dismissBtn.addEventListener('click', () => dismissNotification(notification));
-    
-    container.appendChild(notification);
-    
-    // Auto-remove after 4 seconds
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', type === 'error' ? 'circle-alert' : type === 'success' ? 'circle-check' : 'info');
+    const text = document.createElement('span');
+    text.className = 'notification-message';
+    text.textContent = message;
+    const dismiss = document.createElement('button');
+    dismiss.className = 'notification-dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss notification');
+    dismiss.title = 'Dismiss notification';
+    const closeIcon = document.createElement('i');
+    closeIcon.setAttribute('data-lucide', 'x');
+    dismiss.append(closeIcon);
+    dismiss.addEventListener('click', () => dismissNotification(notification));
+    notification.append(icon, text, dismiss);
+    container.append(notification);
+    window.lucide?.createIcons();
     setTimeout(() => {
         if (notification.parentNode) {
             dismissNotification(notification);
@@ -239,19 +265,22 @@ function toggleFullscreen() {
 
 // ========== Check Recording Status ==========
 async function checkRecordingStatus() {
+    const cameraId = state.currentCameraId;
+    const version = state.selectionVersion;
+    if (!cameraId || state.recordingPending) return;
     try {
-        const response = await fetch('/api/recording/status');
-        const data = await response.json();
-        
-        state.isRecording = data.is_recording;
-        
-        if (data.is_recording && data.duration) {
-            startRecTimer(Math.floor(data.duration));
-        }
-        
-        updateRecordingUI(data.is_recording);
+        const data = await fetchJson(cameraEndpoint('recording/status', cameraId));
+        if (!isCurrentSelection(cameraId, version) || state.recordingPending) return;
+        state.recordingKnown = true;
+        state.isRecording = Boolean(data.is_recording);
+        if (state.isRecording) startRecTimer(Math.floor(data.duration || 0));
+        else stopRecTimer();
+        updateRecordingUI(state.isRecording);
     } catch (error) {
-        console.error('Failed to check recording status:', error);
+        if (isCurrentSelection(cameraId, version)) {
+            state.recordingKnown = false;
+            updateControlAvailability();
+        }
     }
 }
 
@@ -270,7 +299,7 @@ function initializeEventListeners() {
     }
     
     // Fullscreen buttons
-    document.querySelectorAll('#fullscreen-btn, .action-btn[title="Fullscreen"]').forEach(btn => {
+    document.querySelectorAll('#fullscreen-btn, #header-fullscreen-btn').forEach(btn => {
         btn.addEventListener('click', toggleFullscreen);
     });
     
@@ -296,13 +325,9 @@ function toggleInfoPanel() {
     
     state.infoVisible = !state.infoVisible;
     
-    if (state.infoVisible) {
-        videoInfo.style.display = 'block';
-        if (infoBtn) infoBtn.classList.add('active');
-    } else {
-        videoInfo.style.display = 'none';
-        if (infoBtn) infoBtn.classList.remove('active');
-    }
+    videoInfo.hidden = !state.infoVisible;
+    infoBtn?.classList.toggle('active', state.infoVisible);
+    infoBtn?.setAttribute('aria-expanded', String(state.infoVisible));
 }
 
 // ========== Theme Toggle ==========
@@ -366,44 +391,55 @@ function initMobileNav() {
 
 // ========== Multi-Camera Support ==========
 function initCameras() {
-    // Get cameras from window object (injected by template)
     const cameraIds = Object.keys(state.cameras);
     if (cameraIds.length === 0) return;
-    
-    // Set initial camera
-    state.currentCameraId = cameraIds[0];
-    
-    // Populate camera selector
+    const requested = new URLSearchParams(window.location.search).get('camera');
+    state.currentCameraId = state.cameras[requested] ? requested : (window.DEFAULT_CAMERA || cameraIds[0]);
     const cameraSelect = document.getElementById('camera-select');
     if (cameraSelect) {
-        cameraSelect.innerHTML = cameraIds.map(id => {
-            const cam = state.cameras[id];
-            return `<option value="${id}">${cam.name || id}</option>`;
-        }).join('');
-        
-        cameraSelect.addEventListener('change', (e) => {
-            switchCamera(e.target.value);
+        cameraSelect.value = state.currentCameraId;
+        cameraSelect.addEventListener('change', (event) => {
+            switchCamera(event.target.value);
         });
     }
-    
-    // Update initial camera display
+    document.querySelectorAll('[data-camera-link]').forEach(link => {
+        link.addEventListener('click', event => {
+            event.preventDefault();
+            switchCamera(link.dataset.cameraLink);
+        });
+    });
+    document.querySelectorAll('#video-feed, .grid-video-feed').forEach(image => {
+        image.addEventListener('load', () => {
+            delete image.dataset.failed;
+            image.hidden = false;
+        });
+        image.addEventListener('error', () => {
+            image.dataset.failed = 'true';
+            image.hidden = true;
+            if (image.id === 'video-feed') updateCameraStatusUI(state.currentCameraId);
+            else updateGridCameraStatuses();
+        });
+    });
     updateCameraDisplay();
-    
-    // Start status polling
-    startCameraStatusPolling();
 }
 
 function switchCamera(cameraId) {
-    if (!state.cameras[cameraId]) return;
-    
+    if (!state.cameras[cameraId] || cameraId === state.currentCameraId) return;
     state.currentCameraId = cameraId;
+    state.selectionVersion++;
+    state.recordingKnown = false;
+    state.motionKnown = false;
+    state.isRecording = false;
+    state.motionEnabled = false;
+    state.motionDetected = false;
+    stopRecTimer();
+    updateRecordingUI(false);
+    updateMotionUI();
     updateCameraDisplay();
-    
-    // Update camera select
     const cameraSelect = document.getElementById('camera-select');
-    if (cameraSelect) {
-        cameraSelect.value = cameraId;
-    }
+    if (cameraSelect) cameraSelect.value = cameraId;
+    checkRecordingStatus();
+    loadMotionStatus();
 }
 
 function updateCameraDisplay() {
@@ -412,112 +448,118 @@ function updateCameraDisplay() {
     
     const camera = state.cameras[cameraId];
     
-    // Update video feed
     const videoFeed = document.getElementById('video-feed');
     if (videoFeed) {
-        videoFeed.src = `/stream/${cameraId}?t=${Date.now()}`;
+        videoFeed.alt = `${camera.name || cameraId} live camera feed`;
     }
-    
-    // Update camera name badge
-    const cameraNameBadge = document.getElementById('camera-name');
-    if (cameraNameBadge) {
-        cameraNameBadge.textContent = camera.name || cameraId;
-    }
-    
-    // Update status indicator
+    document.querySelectorAll('[data-current-camera-name]').forEach(element => { element.textContent = camera.name || cameraId; });
+    document.querySelectorAll('[data-camera-link]').forEach(link => {
+        const active = link.dataset.cameraLink === cameraId;
+        link.classList.toggle('active', active);
+        if (active) link.setAttribute('aria-current', 'true');
+        else link.removeAttribute('aria-current');
+    });
+    syncCameraStreams();
     updateCameraStatusUI(cameraId);
+    updateGridCameraStatuses();
 }
 
 function updateCameraStatusUI(cameraId) {
     const status = state.cameraStatuses[cameraId] || { state: 'unknown' };
     const indicator = document.querySelector('.camera-status-indicator');
-    const statusDot = indicator?.querySelector('.status-dot');
     const statusText = indicator?.querySelector('.status-text');
-    
     if (!indicator) return;
-    
-    // Remove all status classes
-    indicator.classList.remove('reconnecting', 'offline');
-    
-    switch (status.state) {
-        case 'connected':
-            if (statusText) statusText.textContent = 'Connected';
-            break;
-        case 'connecting':
-        case 'reconnecting':
-            indicator.classList.add('reconnecting');
-            if (statusText) statusText.textContent = 'Reconnecting...';
-            break;
-        case 'offline':
-        case 'error':
-            indicator.classList.add('offline');
-            if (statusText) statusText.textContent = 'Offline';
-            break;
-        default:
-            if (statusText) statusText.textContent = status.state || 'Unknown';
-    }
-    
-    // Update connection overlay
+    const failed = document.getElementById('video-feed')?.dataset.failed === 'true';
+    const connected = status.state === 'connected' && !failed;
+    const reconnecting = ['connecting', 'reconnecting', 'unknown'].includes(status.state) || failed;
+    indicator.classList.toggle('reconnecting', reconnecting);
+    indicator.classList.toggle('offline', !connected && !reconnecting);
+    const label = failed ? 'Stream unavailable' : statusLabel(status.state);
+    if (statusText) statusText.textContent = label;
+    setText('info-status', label);
+    setText('info-source', status.type || state.cameras[cameraId]?.type || '--');
+    setText('info-resolution', status.resolution?.join(' x ') || '--');
+    setText('info-fps', status.framerate ? `${status.framerate} fps` : '--');
+    setText('feed-quality', status.resolution ? `${status.resolution[1]}P / ${status.framerate} FPS` : '--');
+    const live = document.getElementById('live-indicator');
+    if (live) live.hidden = !connected;
     updateConnectionOverlay(cameraId, status);
+    updateControlAvailability();
 }
 
 function updateConnectionOverlay(cameraId, status) {
     const overlay = document.querySelector('.connection-status-overlay');
     if (!overlay) return;
-    
-    if (status.state === 'connected' || status.state === 'connecting') {
-        overlay.classList.remove('visible', 'offline');
-        return;
-    }
-    
+    const failed = document.getElementById('video-feed')?.dataset.failed === 'true';
+    overlay.hidden = status.state === 'connected' && !failed;
+    if (overlay.hidden) return;
     const title = overlay.querySelector('.status-title');
     const message = overlay.querySelector('.status-message');
     const retryInfo = overlay.querySelector('.retry-info');
-    
-    if (status.state === 'reconnecting') {
-        overlay.classList.add('visible');
-        overlay.classList.remove('offline');
-        if (title) title.textContent = 'Reconnecting...';
-        if (message) message.textContent = 'Attempting to restore camera connection';
-        if (retryInfo) {
-            const nextRetry = status.next_retry_in ? Math.ceil(status.next_retry_in) : 0;
-            retryInfo.textContent = `Retry attempt ${status.retry_count || 0} • Next retry in ${nextRetry}s`;
-        }
-    } else if (status.state === 'offline' || status.state === 'error') {
-        overlay.classList.add('visible', 'offline');
-        if (title) title.textContent = 'Camera Offline';
-        if (message) message.textContent = status.error || 'Connection lost';
-        if (retryInfo) retryInfo.textContent = 'Check camera connection and network';
-    }
+    if (title) title.textContent = failed ? 'Stream unavailable' : status.state === 'unknown' ? 'Connecting to camera' : `Camera ${statusLabel(status.state).toLowerCase()}`;
+    if (message) message.textContent = status.last_error || (failed ? 'Retrying the live stream' : `Waiting for ${state.cameras[cameraId]?.name || cameraId}`);
+    if (retryInfo) retryInfo.textContent = status.next_retry_in != null ? `Retry ${status.retry_count || 0} / next attempt in ${Math.ceil(status.next_retry_in)}s` : '';
 }
 
+function statusLabel(status) {
+    const labels = { connected: 'Online', connecting: 'Connecting', reconnecting: 'Reconnecting', offline: 'Offline', error: 'Unavailable', disabled: 'Disabled', unknown: 'Connecting' };
+    return labels[status] || 'Unknown';
+}
+
+function setStreamSource(image, cameraId, active) {
+    if (!image) return;
+    if (!active) {
+        image.removeAttribute('src');
+        image.hidden = true;
+        delete image.dataset.failed;
+        return;
+    }
+    const source = `/stream/${encodeURIComponent(cameraId)}`;
+    if (image.getAttribute('src') !== source || image.dataset.failed) {
+        image.removeAttribute('src');
+        delete image.dataset.failed;
+        image.src = source;
+    }
+    image.hidden = false;
+}
+
+function syncCameraStreams() {
+    document.querySelectorAll('.grid-camera-item').forEach(item => {
+        const cameraId = item.dataset.cameraId;
+        const selected = cameraId === state.currentCameraId;
+        item.hidden = selected;
+        setStreamSource(item.querySelector('img'), cameraId, !document.hidden && !selected && state.gridViewActive && state.cameraStatuses[cameraId]?.state === 'connected');
+    });
+    setStreamSource(document.getElementById('video-feed'), state.currentCameraId, !document.hidden && state.cameraStatuses[state.currentCameraId]?.state === 'connected');
+}
+
+let cameraStatusFetching = false;
+
 async function fetchCameraStatuses() {
+    if (cameraStatusFetching) return;
+    cameraStatusFetching = true;
     try {
-        const response = await fetch('/api/cameras');
-        const data = await response.json();
-        
-        if (data.cameras) {
-            data.cameras.forEach(cam => {
-                state.cameraStatuses[cam.camera_id] = {
-                    state: cam.state,
-                    retry_count: cam.retry_count,
-                    next_retry_in: cam.next_retry_in,
-                    error: cam.last_error
-                };
-            });
-            
-            // Update current camera status UI
-            if (state.currentCameraId) {
-                updateCameraStatusUI(state.currentCameraId);
-            }
-            
-            // Update grid view statuses if active
-            if (state.gridViewActive) {
-                updateGridCameraStatuses();
-            }
-        }
+        const data = await fetchJson('/api/cameras');
+        if (!Array.isArray(data.cameras)) throw new Error('Invalid camera status');
+        state.cameraStatuses = Object.fromEntries(data.cameras.map(camera => [camera.camera_id, camera]));
+        setText('online-camera-count', data.cameras.filter(camera => camera.state === 'connected').length);
+        setText('server-status', `Connected to ${window.location.host}`);
+        document.getElementById('server-status-dot')?.classList.add('connected');
+        syncCameraStreams();
+        updateCameraStatusUI(state.currentCameraId);
+        updateGridCameraStatuses();
+        updateMotionSummary();
     } catch (error) {
-        console.error('Failed to fetch camera statuses:', error);
+        setText('online-camera-count', '--');
+        setText('server-status', 'Server connection lost');
+        document.getElementById('server-status-dot')?.classList.remove('connected');
+        Object.values(state.cameraStatuses).forEach(camera => { camera.state = 'error'; });
+        syncCameraStreams();
+        updateCameraStatusUI(state.currentCameraId);
+        updateGridCameraStatuses();
+        setText('motion-summary', 'Detection status unavailable');
+    } finally {
+        cameraStatusFetching = false;
     }
 }
 
@@ -532,80 +574,63 @@ function startCameraStatusPolling() {
     fetchCameraStatuses();
     
     // Poll every 3 seconds
-    cameraStatusPollInterval = setInterval(fetchCameraStatuses, 3000);
+    cameraStatusPollInterval = setInterval(() => { if (!document.hidden) fetchCameraStatuses(); }, 3000);
 }
 
 // ========== Grid View ==========
 function initGridView() {
     const gridToggle = document.getElementById('grid-toggle');
-    if (!gridToggle) return;
-    
-    gridToggle.addEventListener('click', toggleGridView);
-    
-    // Build grid items
-    buildCameraGrid();
+    const focusToggle = document.getElementById('focus-toggle');
+    gridToggle?.addEventListener('click', () => setCameraLayout(true));
+    focusToggle?.addEventListener('click', () => setCameraLayout(false));
+    document.querySelectorAll('.grid-camera-item').forEach(item => {
+        item.addEventListener('click', () => switchCamera(item.dataset.cameraId));
+    });
+    setCameraLayout(state.gridViewActive);
 }
 
 function toggleGridView() {
-    state.gridViewActive = !state.gridViewActive;
-    
-    const videoSection = document.querySelector('.video-section');
-    const cameraGrid = document.querySelector('.camera-grid');
-    const gridToggle = document.getElementById('grid-toggle');
-    
-    if (state.gridViewActive) {
-        if (videoSection) videoSection.style.display = 'none';
-        if (cameraGrid) cameraGrid.classList.add('active');
-        if (gridToggle) gridToggle.classList.add('active');
-        updateGridCameraStatuses();
-    } else {
-        if (videoSection) videoSection.style.display = '';
-        if (cameraGrid) cameraGrid.classList.remove('active');
-        if (gridToggle) gridToggle.classList.remove('active');
-    }
+    setCameraLayout(!state.gridViewActive);
 }
 
-function buildCameraGrid() {
-    const grid = document.querySelector('.camera-grid');
-    if (!grid) return;
-    
-    const cameraIds = Object.keys(state.cameras);
-    
-    grid.innerHTML = cameraIds.map(id => {
-        const cam = state.cameras[id];
-        return `
-            <div class="grid-camera-item" data-camera-id="${id}" onclick="selectGridCamera('${id}')">
-                <img class="video-feed" src="/stream/${id}" alt="${cam.name}">
-                <div class="grid-live-badge">
-                    <span class="live-dot"></span>
-                    LIVE
-                </div>
-                <div class="camera-label">
-                    <span class="status-dot"></span>
-                    <span>${cam.name || id}</span>
-                </div>
-            </div>
-        `;
-    }).join('');
+function setCameraLayout(overview) {
+    state.gridViewActive = overview;
+    localStorage.setItem('sentinel-layout', overview ? 'overview' : 'focus');
+    const secondary = document.getElementById('other-cameras');
+    if (secondary) secondary.hidden = !overview || Object.keys(state.cameras).length < 2;
+    document.getElementById('home-monitor')?.classList.toggle('focus-mode', !overview);
+    const gridToggle = document.getElementById('grid-toggle');
+    const focusToggle = document.getElementById('focus-toggle');
+    gridToggle?.classList.toggle('active', overview);
+    gridToggle?.setAttribute('aria-pressed', String(overview));
+    focusToggle?.classList.toggle('active', !overview);
+    focusToggle?.setAttribute('aria-pressed', String(!overview));
+    syncCameraStreams();
 }
 
 function selectGridCamera(cameraId) {
     switchCamera(cameraId);
-    toggleGridView(); // Exit grid view
 }
 
 function updateGridCameraStatuses() {
     document.querySelectorAll('.grid-camera-item').forEach(item => {
         const cameraId = item.dataset.cameraId;
-        const status = state.cameraStatuses[cameraId];
-        const statusDot = item.querySelector('.camera-label .status-dot');
-        
-        if (statusDot && status) {
-            statusDot.style.background = 
-                status.state === 'connected' ? 'var(--accent-green)' :
-                status.state === 'reconnecting' ? 'var(--accent-amber)' :
-                'var(--accent-red)';
-        }
+        const status = state.cameraStatuses[cameraId] || { state: 'unknown' };
+        const failed = item.querySelector('img')?.dataset.failed === 'true';
+        const placeholder = item.querySelector('.home-preview-state');
+        if (placeholder) placeholder.hidden = status.state === 'connected' && !failed;
+        const label = item.querySelector('.preview-status');
+        if (label) label.textContent = failed ? 'Unavailable' : statusLabel(status.state);
+        const statusDot = item.querySelector('.status-dot');
+        if (statusDot) statusDot.style.background = status.state === 'connected' && !failed ? 'var(--home-online)' : 'var(--home-warning)';
+        const recordBadge = item.querySelector('.home-preview-recording');
+        if (recordBadge) recordBadge.hidden = !status.is_recording;
+    });
+    document.querySelectorAll('[data-camera-link]').forEach(link => {
+        const status = state.cameraStatuses[link.dataset.cameraLink]?.state || 'unknown';
+        const dot = link.querySelector('.home-status-dot');
+        if (dot) dot.className = `home-status-dot ${status}`;
+        link.title = `${state.cameras[link.dataset.cameraLink]?.name || link.dataset.cameraLink}: ${statusLabel(status)}`;
     });
 }
 
@@ -627,6 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize multi-camera support
     initCameras();
     initGridView();
+    startCameraStatusPolling();
     
     // Check initial recording status
     checkRecordingStatus();
@@ -634,46 +660,140 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize event listeners
     initializeEventListeners();
     
-    // Set initial UI state (recording off by default)
     updateRecordingUI(false);
     
     // Load recordings count
     loadRecordingsCount();
     
-    // Initialize motion detection
-    loadMotionStatus().then(() => {
-        initializeMotionListeners();
-        // Only start polling if motion is enabled
-        if (state.motionEnabled) {
-            startMotionStatusPolling();
+    initializeMotionListeners();
+    loadMotionStatus();
+    startMotionStatusPolling();
+    initializeRecordingPreview();
+    window.lucide?.createIcons({ attrs: { 'aria-hidden': 'true' } });
+    setInterval(() => { if (!document.hidden) loadRecordingsCount(); }, 30000);
+    document.addEventListener('visibilitychange', () => {
+        syncCameraStreams();
+        if (!document.hidden) {
+            fetchCameraStatuses();
+            checkRecordingStatus();
+            loadMotionStatus();
         }
     });
-    
-    console.log('SENTINEL Dashboard initialized');
+    window.addEventListener('pagehide', () => {
+        document.querySelectorAll('#video-feed, .grid-video-feed').forEach(image => image.removeAttribute('src'));
+    });
 });
 
 // ========== Load Recordings Count ==========
 async function loadRecordingsCount() {
     try {
-        const response = await fetch('/api/recordings');
-        const data = await response.json();
-        const countEl = document.getElementById('recordings-count');
-        if (countEl) {
-            countEl.textContent = data.recordings.length;
-        }
+        const data = await fetchJson('/api/recordings');
+        if (!Array.isArray(data.recordings)) throw new Error('Invalid recordings response');
+        state.recordings = data.recordings;
+        setText('recordings-count', data.recordings.length);
+        const dates = data.recordings.map(recording => new Date(recording.created)).filter(date => !Number.isNaN(date.getTime()));
+        const today = new Date().toDateString();
+        setText('today-recordings-count', dates.filter(date => date.toDateString() === today).length);
+        const oldest = dates.length ? Math.min(...dates.map(date => date.getTime())) : null;
+        const historyDays = oldest === null ? 0 : Math.max(1, Math.floor((Date.now() - oldest) / 86400000) + 1);
+        setText('recording-history-days', historyDays);
+        setText('recording-history-unit', historyDays === 1 ? 'day' : 'days');
+        renderRecentRecordings(data.recordings.slice(0, 3));
+        window.loadStorageStats?.();
     } catch (error) {
-        console.error('Failed to load recordings count:', error);
+        setText('recordings-count', '--');
+        setText('today-recordings-count', '--');
+        setText('recording-history-days', '--');
+        renderRecentRecordings([], 'Recordings are unavailable.');
     }
+}
+
+function renderRecentRecordings(recordings, emptyMessage = 'No recordings yet.') {
+    const list = document.getElementById('recent-recordings');
+    if (!list) return;
+    list.replaceChildren();
+    if (!recordings.length) {
+        const message = document.createElement('p');
+        message.className = 'home-empty-message';
+        message.textContent = emptyMessage;
+        list.append(message);
+        return;
+    }
+    recordings.forEach(recording => {
+        const button = document.createElement('button');
+        button.className = 'home-event';
+        button.type = 'button';
+        const thumbnail = document.createElement('span');
+        thumbnail.className = 'home-event-thumbnail';
+        const fallback = document.createElement('i');
+        fallback.setAttribute('data-lucide', 'clapperboard');
+        thumbnail.append(fallback);
+        if (recording.thumbnail) {
+            const image = document.createElement('img');
+            image.src = `/thumbnails/${encodeURIComponent(recording.camera_id)}/${encodeURIComponent(recording.thumbnail)}`;
+            image.alt = '';
+            image.loading = 'lazy';
+            image.addEventListener('load', () => { thumbnail.replaceChildren(image); });
+            image.addEventListener('error', () => { image.remove(); });
+            thumbnail.append(image);
+        }
+        const copy = document.createElement('span');
+        copy.className = 'home-event-copy';
+        const name = document.createElement('strong');
+        name.textContent = recording.camera_name || recording.camera_id;
+        const label = document.createElement('span');
+        label.textContent = recording.filename.startsWith('motion_') ? 'Motion recording' : 'Recording saved';
+        const time = document.createElement('small');
+        time.textContent = new Date(recording.created).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        copy.append(name, label, time);
+        button.append(thumbnail, copy);
+        button.addEventListener('click', () => openRecordingPreview(recording));
+        list.append(button);
+    });
+    window.lucide?.createIcons();
+}
+
+function initializeRecordingPreview() {
+    const dialog = document.getElementById('recording-preview');
+    const video = document.getElementById('preview-video');
+    if (!dialog || !video) return;
+    document.getElementById('preview-close')?.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener('close', () => {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+    });
+    video.addEventListener('error', () => {
+        const error = document.getElementById('preview-error');
+        if (error && video.getAttribute('src')) error.hidden = false;
+    });
+}
+
+function openRecordingPreview(recording) {
+    const dialog = document.getElementById('recording-preview');
+    const video = document.getElementById('preview-video');
+    if (!dialog || !video) return;
+    const path = `${encodeURIComponent(recording.camera_id)}/${encodeURIComponent(recording.filename)}`;
+    setText('preview-title', recording.camera_name || recording.camera_id);
+    setText('preview-description', new Date(recording.created).toLocaleString());
+    document.getElementById('preview-error').hidden = true;
+    document.getElementById('preview-download').href = `/recordings/${path}`;
+    video.src = `/recordings/play/${path}`;
+    dialog.showModal();
 }
 
 // ========== Motion Detection ==========
 async function loadMotionStatus() {
+    const cameraId = state.currentCameraId;
+    const version = state.selectionVersion;
+    if (!cameraId || state.motionPending) return;
     try {
-        const response = await fetch('/api/motion/status');
-        const data = await response.json();
-        
-        state.motionEnabled = data.enabled;
-        state.motionDetected = data.motion_detected;
+        const data = await fetchJson(cameraEndpoint('motion/status', cameraId));
+        if (!isCurrentSelection(cameraId, version) || state.motionPending) return;
+        state.motionKnown = true;
+        state.motionEnabled = Boolean(data.enabled);
+        state.motionDetected = Boolean(data.motion_detected);
         state.motionSettings = {
             sensitivity: data.sensitivity,
             cooldown: data.cooldown,
@@ -683,13 +803,11 @@ async function loadMotionStatus() {
         updateMotionUI();
         updateMotionSettingsUI();
         
-        // If motion is recording, update recording UI
-        if (data.is_motion_recording) {
-            state.isRecording = true;
-            updateRecordingUI(true);
-        }
     } catch (error) {
-        console.error('Failed to load motion status:', error);
+        if (isCurrentSelection(cameraId, version)) {
+            state.motionKnown = false;
+            updateMotionUI();
+        }
     }
 }
 
@@ -735,6 +853,15 @@ function updateMotionUI() {
     if (videoWrapper) {
         videoWrapper.classList.toggle('motion-active', state.motionEnabled && state.motionDetected);
     }
+    if (!state.motionKnown && badge) badge.textContent = '--';
+    updateControlAvailability();
+}
+
+function updateMotionSummary() {
+    const cameras = Object.values(state.cameraStatuses).filter(camera => camera.enabled !== false);
+    const armed = cameras.filter(camera => camera.motion_enabled).length;
+    setText('motion-summary', armed ? `${armed} ${armed === 1 ? 'camera' : 'cameras'} armed` : 'Motion detection off');
+    document.getElementById('motion-summary-dot')?.classList.toggle('connected', armed > 0);
 }
 
 function updateMotionSettingsUI() {
@@ -778,49 +905,42 @@ function getSensitivityLevel(value) {
 }
 
 async function toggleMotion(enabled) {
+    const cameraId = state.currentCameraId;
+    const version = state.selectionVersion;
+    if (!cameraId || !state.motionKnown || state.motionPending) return;
+    state.motionPending = true;
+    updateControlAvailability();
     try {
-        const endpoint = enabled ? '/api/motion/enable' : '/api/motion/disable';
-        const response = await fetch(endpoint, { method: 'POST' });
-        const data = await response.json();
-        
-        if (data.success) {
+        const data = await fetchJson(cameraEndpoint(`motion/${enabled ? 'enable' : 'disable'}`, cameraId), { method: 'POST' });
+        if (!data.success) throw new Error(data.message || 'Failed to toggle motion detection');
+        if (isCurrentSelection(cameraId, version)) {
             state.motionEnabled = enabled;
+            state.motionDetected = false;
             updateMotionUI();
-            
-            // Start or stop polling based on new state
-            if (enabled) {
-                startMotionStatusPolling();
-            } else if (motionPollInterval) {
-                clearInterval(motionPollInterval);
-                motionPollInterval = null;
-            }
-            
-            showNotification(
-                enabled ? 'Motion detection enabled' : 'Motion detection disabled',
-                'success'
-            );
-        } else {
-            showNotification(data.message || 'Failed to toggle motion detection', 'error');
-            // Revert toggle
-            const toggle = document.getElementById('motion-toggle');
-            if (toggle) toggle.checked = !enabled;
         }
+        if (state.cameraStatuses[cameraId]) state.cameraStatuses[cameraId].motion_enabled = enabled;
+        updateMotionSummary();
+        showNotification(`Motion detection ${enabled ? 'enabled' : 'disabled'}: ${state.cameras[cameraId].name || cameraId}`, 'success');
     } catch (error) {
-        console.error('Motion toggle error:', error);
-        showNotification('Connection error', 'error');
+        if (isCurrentSelection(cameraId, version)) updateMotionUI();
+        showNotification(error.message || 'Connection error', 'error');
+    } finally {
+        state.motionPending = false;
+        updateControlAvailability();
     }
 }
 
 async function updateMotionSetting(setting, value) {
+    const cameraId = state.currentCameraId;
+    const version = state.selectionVersion;
+    if (!cameraId) return;
     try {
-        const response = await fetch('/api/motion/settings', {
+        const data = await fetchJson(cameraEndpoint('motion/settings', cameraId), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ [setting]: value })
         });
-        const data = await response.json();
-        
-        if (data.success) {
+        if (data.success && isCurrentSelection(cameraId, version)) {
             state.motionSettings = data.settings;
             updateMotionSettingsUI();
         }
@@ -887,52 +1007,17 @@ function initializeMotionListeners() {
 let motionPollInterval = null;
 
 function startMotionStatusPolling() {
-    // Clear any existing interval
     if (motionPollInterval) {
         clearInterval(motionPollInterval);
     }
-    
-    // Only poll if motion is enabled
-    if (!state.motionEnabled) {
-        return;
-    }
-    
+    let polling = false;
     motionPollInterval = setInterval(async () => {
-        // Stop polling if motion gets disabled
-        if (!state.motionEnabled) {
-            clearInterval(motionPollInterval);
-            motionPollInterval = null;
-            return;
-        }
-        
+        if (document.hidden || !state.currentCameraId || polling) return;
+        polling = true;
         try {
-            const response = await fetch('/api/motion/status');
-            const data = await response.json();
-            
-            const wasDetected = state.motionDetected;
-            state.motionDetected = data.motion_detected;
-            
-            // Update UI if state changed
-            if (wasDetected !== state.motionDetected) {
-                updateMotionUI();
-            }
-            
-            // Sync recording state
-            if (data.is_motion_recording && !state.isRecording) {
-                state.isRecording = true;
-                updateRecordingUI(true);
-            } else if (!data.is_motion_recording && state.isRecording) {
-                // Check if it was a motion recording that stopped
-                const statusResponse = await fetch('/api/recording/status');
-                const statusData = await statusResponse.json();
-                if (!statusData.is_recording) {
-                    state.isRecording = false;
-                    stopRecTimer();
-                    updateRecordingUI(false);
-                }
-            }
-        } catch (error) {
-            // Silent fail for polling
+            await Promise.all([loadMotionStatus(), checkRecordingStatus()]);
+        } finally {
+            polling = false;
         }
-    }, 1000);
+    }, 2000);
 }

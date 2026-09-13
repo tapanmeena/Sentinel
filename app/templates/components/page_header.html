@@ -1,0 +1,16 @@
+<header class="header home-subpage-header">
+    <div class="home-topbar">
+        <div class="home-breadcrumb"><span>Workspace</span><span>/</span><strong>{{ active_page|capitalize }}</strong></div>
+        <div class="home-actions"><time class="home-clock" id="time">--:--:--</time><button class="home-icon-button theme-toggle" title="Toggle theme" aria-label="Toggle theme"><i data-lucide="sun-moon"></i></button><a class="home-icon-button" href="{{ url_for('main.index') }}#recent-activity" title="Recent activity" aria-label="Recent activity"><i data-lucide="activity"></i></a><a class="home-icon-button" href="/logout" title="Sign out" aria-label="Sign out"><i data-lucide="log-out"></i></a></div>
+    </div>
+    <div class="home-subpage-heading">
+        <div><div class="home-eyebrow" id="date">HOME WORKSPACE</div><h1>{{ active_page|capitalize }}</h1></div>
+        {% if active_page == 'recordings' %}
+        <div class="home-heading-actions"><label class="home-camera-select"><i data-lucide="cctv"></i><select id="camera-filter" aria-label="Filter recordings by camera"><option value="all">All cameras</option>{% for cam_id, cam in cameras.items() %}<option value="{{ cam_id }}">{{ cam.name or cam_id }}</option>{% endfor %}</select></label><button class="home-icon-button" id="refresh-recordings" title="Refresh recordings" aria-label="Refresh recordings"><i data-lucide="refresh-cw"></i></button></div>
+        {% elif active_page == 'settings' %}
+        <span class="home-micro">{{ camera.name if camera else 'Default camera' }}</span>
+        {% elif active_page == 'devices' %}
+        <span class="home-micro">{{ cameras|length }} {{ 'CAMERA' if cameras|length == 1 else 'CAMERAS' }} CONFIGURED</span>
+        {% endif %}
+    </div>
+</header>

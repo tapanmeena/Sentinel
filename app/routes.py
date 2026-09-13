@@ -1,4 +1,5 @@
 """Route definitions for the Flask application."""
+import shutil
 from urllib.parse import quote
 
 from flask import (
@@ -199,7 +200,18 @@ def list_recordings():
 @login_required
 def storage_stats():
     """Get aggregate recording counts and sizes per camera."""
-    return jsonify(CameraManager.get_storage_stats())
+    stats = CameraManager.get_storage_stats()
+    recordings_dir = os.path.join(os.getcwd(), 'recordings')
+    try:
+        usage = shutil.disk_usage(recordings_dir if os.path.isdir(recordings_dir) else os.getcwd())
+        stats['disk_usage'] = {
+            'total_bytes': usage.total,
+            'used_bytes': usage.used,
+            'free_bytes': usage.free,
+        }
+    except OSError:
+        stats['disk_usage'] = None
+    return jsonify(stats)
 
 
 @main_bp.route('/api/recordings/<camera_id>/<filename>', methods=['DELETE'])
