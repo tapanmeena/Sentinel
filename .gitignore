@@ -7,3 +7,5 @@ recordings/
 snapshots/
 thumbnails/
 .DS_Store
+mockups/
+.playwright-mcp

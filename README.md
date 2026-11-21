@@ -1,4 +1,7 @@
-# SENTINEL Security Dashboard
+---
+title: SENTINEL Security Dashboard
+description: Multi-camera streaming, recording, and motion detection for Raspberry Pi.
+---
 
 A professional, futuristic security camera streaming dashboard for Raspberry Pi with multi-camera support, motion detection, and recording capabilities.
 
@@ -153,6 +156,20 @@ CAMERAS = {
 Use `{ENV_VAR}` syntax in RTSP URLs to substitute environment variables:
 - Keeps passwords out of config files
 - Store credentials in `.env` file
+
+### CP Plus Recorder Channels
+
+To stream through a CP Plus CP-UNR-104F1 recorder, give each camera entry the
+same recorder address and credential variables. Set `channel` to the channel
+number shown on the recorder, starting at `1`. Use the recorder login in `.env`,
+not the individual camera logins or the gCMOB app account.
+
+```text
+rtsp://{RTSP_CAM2_USER}:{RTSP_CAM2_PASS}@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0
+```
+
+`subtype=0` selects the main stream. Restart Sentinel after changing the camera
+configuration and check the Devices page for each channel's connection status.
 
 ## ⚙️ Configuration Options
 
