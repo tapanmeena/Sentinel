@@ -2,16 +2,22 @@
 
 Supports two client types against the same routes:
 
-* Browsers   -> Flask session cookie, redirected to the login page on failure.
-* Native app -> stateless signed bearer tokens, given a JSON 401 on failure.
+* Browsers   -> Flask session cookie (via One Auth OIDC + PKCE), redirected to login on failure.
+* Native app -> AuthKit EdDSA JWT bearer tokens, given a JSON 401 on failure.
 """
+from __future__ import annotations
+
 import os
 import hashlib
 import secrets
+import threading
 from functools import wraps
 
+import jwt
 from flask import session, redirect, url_for, request, jsonify, current_app, g
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+from config import Config
 
 # Salts keep session tokens and media tokens mutually unusable even though both
 # are signed with SECRET_KEY.
@@ -20,6 +26,9 @@ MEDIA_TOKEN_SALT = 'sentinel.api.media'
 
 SESSION_TOKEN_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 MEDIA_TOKEN_MAX_AGE = 5 * 60  # 5 minutes
+
+_jwks_clients: dict[str, jwt.PyJWKClient] = {}
+_jwks_lock = threading.Lock()
 
 # Read-only media endpoints that may additionally be authenticated with a
 # short-lived `?token=` query parameter, because <img>/<video> sources cannot
@@ -37,6 +46,113 @@ MEDIA_ENDPOINTS = frozenset({
     'main.get_thumbnail',
     'main.get_thumbnail_camera',
 })
+
+
+def get_authkit_issuer_url() -> str:
+    """Resolve the configured AuthKit issuer URL without trailing slash."""
+    raw = current_app.config.get('AUTHKIT_ISSUER_URL') or Config.AUTHKIT_ISSUER_URL
+    return str(raw).strip().rstrip('/')
+
+
+def get_authkit_jwks_url() -> str:
+    """Resolve the JWKS URL, defaulting to {AUTHKIT_ISSUER_URL}/.well-known/jwks.json."""
+    raw = current_app.config.get('AUTHKIT_JWKS_URL')
+    if raw is None:
+        raw = Config.AUTHKIT_JWKS_URL
+    jwks_url = str(raw or '').strip()
+    return jwks_url or f"{get_authkit_issuer_url()}/.well-known/jwks.json"
+
+
+def get_authkit_pool_slug() -> str:
+    """Resolve the expected AuthKit pool slug."""
+    raw = current_app.config.get('AUTHKIT_POOL_SLUG') or Config.AUTHKIT_POOL_SLUG
+    return str(raw).strip()
+
+
+def get_authkit_client_id() -> str:
+    """Resolve the OIDC client ID used by the web dashboard."""
+    raw = current_app.config.get('AUTHKIT_CLIENT_ID') or Config.AUTHKIT_CLIENT_ID
+    return str(raw).strip()
+
+
+def get_allowed_emails() -> set[str]:
+    """Return normalized lowercase email allowlist (empty set means allow entire pool)."""
+    raw = current_app.config.get('SENTINEL_ALLOWED_EMAILS')
+    if raw is None:
+        raw = Config.SENTINEL_ALLOWED_EMAILS
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        items = (str(item).strip().lower() for item in raw)
+    else:
+        items = (part.strip().lower() for part in str(raw or '').split(','))
+    return {email for email in items if email}
+
+
+def is_local_auth_enabled() -> bool:
+    """Whether emergency break-glass local username/password auth is enabled."""
+    configured = current_app.config.get('SENTINEL_LOCAL_AUTH_ENABLED')
+    if configured is not None:
+        return bool(configured)
+    return bool(Config.SENTINEL_LOCAL_AUTH_ENABLED or current_app.config.get('TESTING', False))
+
+
+def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
+    """Return a cached PyJWKClient instance for the given JWKS URL."""
+    with _jwks_lock:
+        client = _jwks_clients.get(jwks_url)
+        if client is None:
+            client = jwt.PyJWKClient(
+                jwks_url,
+                cache_jwk_set=True,
+                lifespan=300,
+                timeout=10,
+            )
+            _jwks_clients[jwks_url] = client
+        return client
+
+
+def verify_authkit_access_token(token: str) -> str | None:
+    """Verify an AuthKit EdDSA access token and return the authorized email, or None."""
+    if not token or not isinstance(token, str):
+        return None
+
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get('alg') != 'EdDSA' or not header.get('kid'):
+            return None
+
+        issuer_url = get_authkit_issuer_url()
+        pool_slug = get_authkit_pool_slug()
+        jwks_url = get_authkit_jwks_url()
+
+        signing_key = _get_jwks_client(jwks_url).get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=['EdDSA'],
+            issuer=issuer_url,
+            audience=f"pool:{pool_slug}",
+            leeway=5,
+            options={'require': ['exp', 'iat', 'iss', 'sub', 'aud']},
+        )
+    except (jwt.PyJWTError, OSError, ValueError, TypeError):
+        return None
+
+    if 'pool' in payload and payload.get('pool') != pool_slug:
+        return None
+
+    if payload.get('email_verified') is not True:
+        return None
+
+    email = payload.get('email')
+    if not isinstance(email, str) or not email.strip():
+        return None
+
+    normalized_email = email.strip()
+    allowed_emails = get_allowed_emails()
+    if allowed_emails and normalized_email.lower() not in allowed_emails:
+        return None
+
+    return normalized_email
 
 
 def get_credentials():
@@ -125,9 +241,13 @@ def authenticate_request():
     """Resolve the current user from bearer token, session cookie, or media token."""
     token = _bearer_token()
     if token:
-        username = verify_session_token(token)
-        if username:
-            return username
+        email = verify_authkit_access_token(token)
+        if email:
+            return email
+        if is_local_auth_enabled():
+            username = verify_session_token(token)
+            if username:
+                return username
 
     if is_logged_in():
         return session.get('username')

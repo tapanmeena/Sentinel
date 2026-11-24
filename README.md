@@ -95,10 +95,19 @@ live-stream/
 
 Create a `.env` file with:
 ```bash
-# Authentication
+# Authentication (One Auth / AuthKit)
 SECRET_KEY=your-secret-key-here
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your-secure-password
+AUTHKIT_ISSUER_URL=https://auth.tapanmeena.com
+# Optional local JWKS override on Raspberry Pi for offline LAN resilience:
+# AUTHKIT_JWKS_URL=http://127.0.0.1:7583/.well-known/jwks.json
+AUTHKIT_POOL_SLUG=one-auth
+AUTHKIT_CLIENT_ID=sentinel-web
+SENTINEL_ALLOWED_EMAILS=you@example.com
+
+# Optional emergency break-glass local login (disabled by default)
+SENTINEL_LOCAL_AUTH_ENABLED=false
+# SENTINEL_USERNAME=admin
+# SENTINEL_PASSWORD=your-secure-password
 
 # RTSP Camera Credentials (optional)
 RTSP_CAM2_USER=admin
@@ -209,25 +218,22 @@ Motion settings are stored in `motion_config.json` per camera:
 
 ## � JSON API for native clients
 
-Browsers keep using the session cookie flow. Native clients authenticate with a signed bearer
-token instead, and receive JSON `401` responses rather than a redirect to the login page.
+Browsers sign in via **One Auth** (`AuthKit` OAuth 2.1 + S256 PKCE at `/auth/oidc/login` -> `/auth/callback`) and keep using the Flask session cookie flow. Native clients authenticate directly against One Auth (`sentinel-mobile` in pool `one-auth`) and send `EdDSA` access tokens as `Authorization: Bearer <jwt>`, receiving JSON `401` responses rather than HTML redirects.
 
 | Endpoint | Method | Description |
 |-----------------------------|--------|--------------------------------------------------------|
-| `/api/auth/login` | POST | Exchange credentials for a bearer token (30 day expiry) |
+| `/auth/oidc/login` | GET | Start OAuth 2.1 + PKCE sign-in with One Auth (`sentinel-web`) |
+| `/auth/callback` | GET | Complete One Auth PKCE callback and establish browser session |
 | `/api/auth/logout` | POST | Clear any browser session |
-| `/api/auth/me` | GET | Return the authenticated username |
+| `/api/auth/me` | GET | Return the authenticated email / username |
 | `/api/auth/media-token` | POST | Issue a 5 minute, read-only token for media URLs |
 | `/api/storage/stats` | GET | Recording counts and sizes, per camera |
 | `/embed/stream/<camera_id>` | GET | Standalone MJPEG viewer page for the mobile WebView |
 
-Send the token as `Authorization: Bearer <token>`. Media URLs such as `/stream/<id>`,
+Send the AuthKit access token as `Authorization: Bearer <token>`. Media URLs such as `/stream/<id>`,
 `/thumbnails/...`, and `/recordings/play/...` cannot carry headers, so they additionally accept
-`?token=<media-token>`. Media tokens are signed with a separate salt, expire in five minutes, and
+`?token=<media-token>`. Media tokens are signed with `SECRET_KEY` + `MEDIA_TOKEN_SALT`, expire in five minutes, and
 are rejected by every `/api/*` and write endpoint.
-
-Tokens are stateless and signed with `SECRET_KEY`, so no database is required. Rotating
-`SECRET_KEY` invalidates every issued token.
 
 ## 🔒 Security
 

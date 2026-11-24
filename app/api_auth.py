@@ -13,6 +13,7 @@ from app.auth import (
     create_media_token,
     create_session_token,
     get_current_user,
+    is_local_auth_enabled,
     login_required,
     logout_user,
     verify_credentials,
@@ -23,7 +24,10 @@ api_auth_bp = Blueprint('api_auth', __name__, url_prefix='/api/auth')
 
 @api_auth_bp.route('/login', methods=['POST'])
 def api_login():
-    """Exchange credentials for a bearer token."""
+    """Exchange emergency local credentials for a bearer token when enabled."""
+    if not is_local_auth_enabled():
+        return jsonify({"error": "Local login is disabled; sign in with One Auth"}), 403
+
     data = request.get_json(silent=True) or {}
     username = str(data.get('username', '')).strip()
     password = str(data.get('password', ''))

@@ -3,9 +3,14 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { create } from 'zustand';
 
-import { configureApi, normalizeBaseUrl } from '@/api/client';
+import {
+  configureApi,
+  normalizeBaseUrl,
+  setTokenChangeListener,
+  tokenStorage,
+} from '@/api/client';
 
-const TOKEN_KEY = 'sentinel.auth.token';
+const LEGACY_TOKEN_KEY = 'sentinel.auth.token';
 const SERVER_KEY = 'sentinel.server.url';
 const USERNAME_KEY = 'sentinel.auth.username';
 
@@ -30,7 +35,7 @@ interface AuthState {
   clearServer: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   hydrated: false,
   serverUrl: null,
   token: null,
@@ -42,6 +47,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     let token: string | null = null;
     let username: string | null = null;
 
+    // Remove any pre-AuthKit legacy token from SecureStore.
+    await SecureStore.deleteItemAsync(LEGACY_TOKEN_KEY).catch(() => {});
+
     try {
       serverUrl = await AsyncStorage.getItem(SERVER_KEY);
       username = await AsyncStorage.getItem(USERNAME_KEY);
@@ -50,10 +58,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      token = await SecureStore.getItemAsync(TOKEN_KEY);
+      const stored = await tokenStorage.getTokens();
+      token = stored?.accessToken ?? null;
     } catch {
       token = null;
     }
+
+    setTokenChangeListener((nextAccessToken) => {
+      set({ token: nextAccessToken });
+    });
 
     configureApi({ baseUrl: serverUrl, token });
     set({ hydrated: true, serverUrl, token, username });
@@ -63,31 +76,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const normalized = normalizeBaseUrl(url);
     if (!normalized) throw new Error('Enter a valid server address');
 
-    const changedHost = get().serverUrl !== null && get().serverUrl !== normalized;
     await AsyncStorage.setItem(SERVER_KEY, normalized);
-
-    if (changedHost) {
-      // A token is only valid for the server that issued it.
-      await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
-      await AsyncStorage.removeItem(USERNAME_KEY).catch(() => {});
-      configureApi({ baseUrl: normalized, token: null });
-      set({ serverUrl: normalized, token: null, username: null });
-      return;
-    }
-
     configureApi({ baseUrl: normalized });
     set({ serverUrl: normalized });
   },
 
   signIn: async (token, username) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
     await AsyncStorage.setItem(USERNAME_KEY, username);
     configureApi({ token });
     set({ token, username });
   },
 
   signOut: async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+    await tokenStorage.clearTokens();
+    await SecureStore.deleteItemAsync(LEGACY_TOKEN_KEY).catch(() => {});
     configureApi({ token: null });
     set({ token: null });
   },
@@ -95,7 +97,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearServer: async () => {
     await AsyncStorage.removeItem(SERVER_KEY).catch(() => {});
     await AsyncStorage.removeItem(USERNAME_KEY).catch(() => {});
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+    await tokenStorage.clearTokens();
+    await SecureStore.deleteItemAsync(LEGACY_TOKEN_KEY).catch(() => {});
     configureApi({ baseUrl: null, token: null });
     set({ serverUrl: null, token: null, username: null });
   },

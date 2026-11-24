@@ -30,6 +30,7 @@ export interface TextFieldProps {
   hint?: string;
   editable?: boolean;
   autoFocus?: boolean;
+  maxLength?: number;
   textContentType?: TextInputProps['textContentType'];
   inputRef?: RefObject<TextInput | null>;
 }
@@ -50,6 +51,7 @@ export function TextField({
   hint,
   editable = true,
   autoFocus = false,
+  maxLength,
   textContentType,
   inputRef,
 }: TextFieldProps) {
@@ -100,6 +102,7 @@ export function TextField({
           onBlur={() => setFocused(false)}
           editable={editable}
           autoFocus={autoFocus}
+          maxLength={maxLength}
           textContentType={textContentType}
           accessibilityLabel={label}
           style={[styles.input, { color: theme.colors.text }]}

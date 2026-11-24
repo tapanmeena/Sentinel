@@ -1,6 +1,8 @@
 # SENTINEL Security Dashboard - Dependencies
 flask>=3.0.0
 itsdangerous>=2.1.0
+PyJWT[crypto]>=2.9.0
+requests>=2.31.0
 opencv-python>=4.8.0
 picamera2>=0.3.0
 gunicorn>=21.0.0

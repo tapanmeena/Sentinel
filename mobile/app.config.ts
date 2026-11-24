@@ -1,6 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 const SENTINEL_URL = process.env.EXPO_PUBLIC_SENTINEL_URL ?? '';
+const AUTHKIT_URL = process.env.EXPO_PUBLIC_AUTHKIT_URL ?? 'https://auth.tapanmeena.com';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -53,6 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   extra: {
     sentinelUrl: SENTINEL_URL,
+    authkitUrl: AUTHKIT_URL,
     eas: {
       projectId: "27d28ae2-f07c-497e-aefd-225fdb171cc8",
     },

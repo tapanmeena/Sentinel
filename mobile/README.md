@@ -20,11 +20,12 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` and point `EXPO_PUBLIC_SENTINEL_URL` at your server. This only pre-fills the setup
-screen; users can change the address in the app at any time.
+Edit `.env` and point `EXPO_PUBLIC_SENTINEL_URL` at your server and `EXPO_PUBLIC_AUTHKIT_URL` at
+your One Auth (AuthKit) issuer:
 
 ```bash
-EXPO_PUBLIC_SENTINEL_URL=https://sentinel.example.com
+EXPO_PUBLIC_SENTINEL_URL=https://camera.tapanmeena.com
+EXPO_PUBLIC_AUTHKIT_URL=https://auth.tapanmeena.com
 ```
 
 ## Running on Android
@@ -74,11 +75,15 @@ mobile/
 
 ## How authentication works
 
-1. `POST /api/auth/login` exchanges the username and password for a signed bearer token.
-2. The token goes into `expo-secure-store` and every API request sends it as `Authorization: Bearer`.
-3. Media URLs cannot carry headers, so the app also fetches a short-lived media token from
-   `POST /api/auth/media-token` and appends it as `?token=`. It refreshes every four minutes.
-4. Any `401` clears the token, wipes the query cache, and returns to the sign-in screen.
+1. Users sign in against **One Auth** (`AuthKitClient` with `clientId: 'sentinel-mobile'` in pool
+   `one-auth`) using either **Email + Password** or a passwordless **6-digit Email OTP**.
+2. Access and refresh tokens are stored in `expo-secure-store` via `KeyValueTokenStorage`. Before
+   every Sentinel `/api/*` request, `authClient.getValidAccessToken()` returns a valid `EdDSA`
+   access token (automatically rotating refresh tokens single-flight when needed).
+3. Media URLs cannot carry headers, so the app still exchanges its bearer token for a short-lived
+   read-only media token from `POST /api/auth/media-token` and appends it as `?token=`. It refreshes
+   every four minutes.
+4. Any `401` after refresh clears stored tokens, wipes the query cache, and returns to sign-in.
 
 ## How live streaming works
 

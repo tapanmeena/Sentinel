@@ -59,7 +59,7 @@ export default function SettingsScreen() {
   const buffer = motion.data?.buffer_seconds ?? 5;
 
   const confirmSignOut = () => {
-    Alert.alert('Sign out?', 'You will need your username and password to sign back in.', [
+    Alert.alert('Sign out?', 'You will need to sign in with One Auth again.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
