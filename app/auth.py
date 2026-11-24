@@ -63,6 +63,15 @@ def get_authkit_jwks_url() -> str:
     return jwks_url or f"{get_authkit_issuer_url()}/.well-known/jwks.json"
 
 
+def get_authkit_token_url() -> str:
+    """Resolve the token exchange URL, defaulting to {AUTHKIT_ISSUER_URL}/oauth/token."""
+    raw = current_app.config.get('AUTHKIT_TOKEN_URL')
+    if raw is None:
+        raw = getattr(Config, 'AUTHKIT_TOKEN_URL', '')
+    token_url = str(raw or '').strip()
+    return token_url or f"{get_authkit_issuer_url()}/oauth/token"
+
+
 def get_authkit_pool_slug() -> str:
     """Resolve the expected AuthKit pool slug."""
     raw = current_app.config.get('AUTHKIT_POOL_SLUG') or Config.AUTHKIT_POOL_SLUG
@@ -104,6 +113,7 @@ def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
                 jwks_url,
                 cache_jwk_set=True,
                 lifespan=300,
+                headers={'User-Agent': 'Sentinel-AuthKit-Verifier/1.0'},
                 timeout=10,
             )
             _jwks_clients[jwks_url] = client
@@ -134,7 +144,8 @@ def verify_authkit_access_token(token: str) -> str | None:
             leeway=5,
             options={'require': ['exp', 'iat', 'iss', 'sub', 'aud']},
         )
-    except (jwt.PyJWTError, OSError, ValueError, TypeError):
+    except (jwt.PyJWTError, OSError, ValueError, TypeError) as exc:
+        current_app.logger.warning('AuthKit token verification failed: %s', exc)
         return None
 
     if 'pool' in payload and payload.get('pool') != pool_slug:

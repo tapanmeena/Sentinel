@@ -26,6 +26,7 @@ class Config:
     # AuthKit (One Auth) settings
     AUTHKIT_ISSUER_URL = os.environ.get('AUTHKIT_ISSUER_URL', 'https://auth.tapanmeena.com').rstrip('/')
     AUTHKIT_JWKS_URL = os.environ.get('AUTHKIT_JWKS_URL', '')
+    AUTHKIT_TOKEN_URL = os.environ.get('AUTHKIT_TOKEN_URL', '')
     AUTHKIT_POOL_SLUG = os.environ.get('AUTHKIT_POOL_SLUG', 'one-auth')
     AUTHKIT_CLIENT_ID = os.environ.get('AUTHKIT_CLIENT_ID', 'sentinel-web')
     SENTINEL_ALLOWED_EMAILS = os.environ.get('SENTINEL_ALLOWED_EMAILS', '')

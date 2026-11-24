@@ -12,6 +12,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from app.auth import (
     get_authkit_client_id,
     get_authkit_issuer_url,
+    get_authkit_token_url,
     is_local_auth_enabled,
     is_logged_in,
     login_user,
@@ -141,7 +142,7 @@ def oidc_callback():
             local_auth_enabled=local_auth_enabled,
         ), 400
 
-    token_url = f"{get_authkit_issuer_url()}/oauth/token"
+    token_url = f"{get_authkit_token_url()}"
     try:
         token_resp = requests.post(
             token_url,
@@ -152,7 +153,10 @@ def oidc_callback():
                 'redirect_uri': url_for('auth.oidc_callback', _external=True),
                 'code_verifier': code_verifier,
             },
-            headers={'Accept': 'application/json'},
+            headers={
+                'Accept': 'application/json',
+                'User-Agent': 'Sentinel-AuthKit-Client/1.0',
+            },
             timeout=10,
         )
     except requests.RequestException:

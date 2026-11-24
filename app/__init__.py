@@ -28,6 +28,7 @@ def create_app():
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['AUTHKIT_ISSUER_URL'] = Config.AUTHKIT_ISSUER_URL
     app.config['AUTHKIT_JWKS_URL'] = Config.AUTHKIT_JWKS_URL
+    app.config['AUTHKIT_TOKEN_URL'] = Config.AUTHKIT_TOKEN_URL
     app.config['AUTHKIT_POOL_SLUG'] = Config.AUTHKIT_POOL_SLUG
     app.config['AUTHKIT_CLIENT_ID'] = Config.AUTHKIT_CLIENT_ID
     app.config['SENTINEL_ALLOWED_EMAILS'] = Config.SENTINEL_ALLOWED_EMAILS
